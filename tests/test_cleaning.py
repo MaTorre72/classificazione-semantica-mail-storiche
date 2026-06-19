@@ -1,100 +1,83 @@
+import pytest
+
 from email_cluster.cleaning.normalizer import build_clean_text
+from email_cluster.config import CleaningConfig
 
 
-def test_cleaning_removes_quoted_reply_and_disclaimer() -> None:
-    text = """Buongiorno,
-serve la documentazione RENTRI.
-
-Da: Mario <mario@example.com>
-vecchio messaggio
-
-Questo messaggio e i suoi allegati sono riservati."""
-    cleaned = build_clean_text(1, text)
-
-    assert "documentazione RENTRI" in cleaned.clean_text
-    assert "vecchio messaggio" not in cleaned.clean_text
-    assert cleaned.cleaning_flags["quoted_reply_removed"]
+CFG = CleaningConfig(min_semantic_chars=20, min_unique_words=3)
 
 
-def test_cleaning_removes_low_signal_links_and_mailto_lines() -> None:
-    text = """Ciao Marco,
-trovi l'analisi in allegato.
-https://example.com/tracking
-mailto:qualcuno@example.com
-"""
-    cleaned = build_clean_text(1, text)
-
-    assert "analisi in allegato" in cleaned.clean_text
-    assert "https://example.com/tracking" not in cleaned.clean_text
-    assert "mailto:" not in cleaned.clean_text
+def clean(subject: str, body: str, attachments: bool = False):
+    return build_clean_text(1, subject=subject, body=body, has_attachments=attachments, config=CFG)
 
 
-def test_cleaning_removes_professional_signature_and_inline_tracking_links() -> None:
-    text = """Buonasera a tutti,
-in allegato le trascrizioni dell'ultima udienza.
-Cordialmente,
-
-Avv. Martina Fusato
-Associate
-Curriculum Vitae<https://www.example.com/cv.pdf>
-[cid:image001.png@01DA5479]<https://www.linkedin.com/company/example/>
-"""
-    cleaned = build_clean_text(1, text)
-
-    assert "trascrizioni dell'ultima udienza" in cleaned.clean_text
-    assert "Martina Fusato" not in cleaned.clean_text
-    assert "Curriculum Vitae" not in cleaned.clean_text
-    assert "cid:" not in cleaned.clean_text
+@pytest.mark.parametrize(
+    ("subject", "body", "language"),
+    [
+        ("Relazione emissioni", "Invio la relazione aggiornata per la verifica finale.", "it"),
+        ("Updated report", "Please review the updated report for our next meeting.", "en"),
+    ],
+)
+def test_normal_operational_email(subject, body, language) -> None:
+    result = clean(subject, body)
+    assert result.message_type == "operational_email"
+    assert result.language == language
+    assert result.semantic_text.startswith(subject)
+    assert not result.excluded_from_main_clustering
 
 
-def test_cleaning_removes_disclaimer_and_contact_footer() -> None:
-    text = """Test aspirazione reparto mastici.
-
-This email is intended only for the person to whom it is addressed and/or otherwise authorized personnel.
-The information contained herein and attached is confidential.
-Via I Maggio, 226/263 - 37020 Volargne (VR) - Italy
-C.F. e P.IVA 00214680233
-Tel. +39 045 686 0222 - Fax: +39 045 686 2456
-"""
-    cleaned = build_clean_text(1, text)
-
-    assert cleaned.clean_text == "Test aspirazione reparto mastici."
+def test_signature_is_removed() -> None:
+    result = clean("Analisi", "In allegato trovi tutti i risultati delle analisi.\nCordiali saluti\nMario Rossi\nTel. 012345")
+    assert "Mario Rossi" not in result.semantic_text
+    assert result.cleaning_flags["signature_removed"]
 
 
-def test_cleaning_removes_teams_and_newsletter_boilerplate_lines() -> None:
-    text = """Allineamento VIA / SEVESO
-Riunione di Microsoft Teams
-Partecipa da computer, app per dispositivi mobili o dispositivo della stanza
-Fai clic qui per partecipare alla riunione
-Scarica Teams | Partecipa sul web
-Non visualizzi questa email? Leggi la versione web.
-"""
-    cleaned = build_clean_text(1, text)
-
-    assert cleaned.clean_text == "Allineamento VIA / SEVESO"
+def test_disclaimer_is_removed() -> None:
+    result = clean("Pratica", "La pratica e pronta per essere inviata domani.\nQuesto messaggio e i suoi allegati sono riservati.")
+    assert "riservati" not in result.semantic_text
+    assert result.cleaning_flags["disclaimer_removed"]
 
 
-def test_cleaning_removes_standalone_greetings_and_names() -> None:
-    text = """Richiesta analisi emissioni
-Ciao Marco,
-ti mando in allegato la relazione aggiornata.
-Grazie,
-Andrea Peretti
-"""
-    cleaned = build_clean_text(1, text)
-
-    assert cleaned.clean_text == "Richiesta analisi emissioni\nti mando in allegato la relazione aggiornata."
+@pytest.mark.parametrize("separator", ["On Monday Mario wrote:", "Il giorno lunedi Mario ha scritto:"])
+def test_reply_chain_is_removed(separator) -> None:
+    result = clean("Re: Preventivo", f"Confermo il preventivo aggiornato per il nuovo impianto.\n{separator}\nVecchio testo da eliminare")
+    assert "Vecchio testo" not in result.semantic_text
+    assert result.cleaning_flags["quoted_reply_removed"]
 
 
-def test_cleaning_removes_original_message_and_automatic_access_noise() -> None:
-    text = """Registrazione ingresso
-CUBESuite
-Spett.le Torresendi Marco,sei stato registrato presso Tenax SedePer
-registrare l'uscita mostra questo qrcode al dispositivo
-CUBESuite - © Life3 S.r.l.
------Messaggio originale-----
-testo vecchio
-"""
-    cleaned = build_clean_text(1, text)
+def test_quoted_lines_are_removed() -> None:
+    result = clean("Aggiornamento", "Procediamo con la versione aggiornata del documento.\n> precedente risposta\n> altro testo")
+    assert "precedente" not in result.semantic_text
 
-    assert cleaned.clean_text == "Registrazione ingresso"
+
+@pytest.mark.parametrize("separator", ["Inizio messaggio inoltrato:", "-----Original Message-----"])
+def test_forwarded_mail_is_removed(separator) -> None:
+    result = clean("Fwd: Progetto", f"Ti inoltro i documenti richiesti per completare la pratica.\n{separator}\nFrom: old@example.com\nTesto vecchio")
+    assert "Testo vecchio" not in result.semantic_text
+
+
+def test_newsletter_is_excluded() -> None:
+    result = clean("Le offerte Amazon di oggi", "Scopri tutte le offerte selezionate per te.\nUnsubscribe")
+    assert result.message_type == "newsletter"
+    assert result.excluded_from_main_clustering
+
+
+@pytest.mark.parametrize(
+    ("subject", "body", "expected"),
+    [
+        ("ACCETTAZIONE", "Ricevuta di accettazione del gestore di posta certificata", "pec_receipt"),
+        ("Delivery Status Notification", "Mail delivery subsystem: delivery has failed", "delivery_notification"),
+        ("Invito riunione", "Riunione di Microsoft Teams. Fai clic qui per partecipare", "calendar_message"),
+        ("Re: conferma", "ok grazie", "short_ack"),
+    ],
+)
+def test_non_operational_types_are_excluded(subject, body, expected) -> None:
+    result = clean(subject, body)
+    assert result.message_type == expected
+    assert result.excluded_from_main_clustering
+
+
+def test_attachment_only_is_excluded() -> None:
+    result = clean("Documento", "", attachments=True)
+    assert result.message_type == "attachment_only"
+    assert result.excluded_from_main_clustering

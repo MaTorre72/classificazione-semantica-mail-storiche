@@ -166,9 +166,11 @@ class Repository:
         cur = self.con.execute(
             """
             INSERT OR IGNORE INTO clean_texts (
-                email_id, language, clean_text, cleaning_version, cleaning_flags_json, created_at
+                email_id, language, clean_text, cleaning_version, cleaning_flags_json, created_at,
+                semantic_text, subject_clean, body_current_message_clean, message_type,
+                quality_score, excluded_from_main_clustering, exclusion_reason
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cleaned.email_id,
@@ -177,6 +179,13 @@ class Repository:
                 cleaned.cleaning_version,
                 json_dumps(cleaned.cleaning_flags),
                 utcnow(),
+                cleaned.semantic_text,
+                cleaned.subject_clean,
+                cleaned.body_current_message_clean,
+                cleaned.message_type,
+                cleaned.quality_score,
+                1 if cleaned.excluded_from_main_clustering else 0,
+                cleaned.exclusion_reason,
             ),
         )
         if cur.lastrowid:
@@ -218,7 +227,9 @@ class Repository:
             JOIN emails e ON e.id = c.email_id
             LEFT JOIN embeddings emb
                 ON emb.clean_text_id = c.id AND emb.model_id = ?
-            WHERE e.project_id = ? AND emb.id IS NULL AND length(c.clean_text) > 0
+            WHERE e.project_id = ? AND emb.id IS NULL
+                AND c.excluded_from_main_clustering = 0 AND length(c.semantic_text) > 0
+                AND c.id = (SELECT MAX(c3.id) FROM clean_texts c3 WHERE c3.email_id = c.email_id)
             ORDER BY c.id
         """
         params: tuple[Any, ...]
@@ -261,16 +272,23 @@ class Repository:
         return list(
             self.con.execute(
                 """
-                SELECT emb.*, c.clean_text, e.subject, e.sender
+                SELECT emb.*, c.clean_text, c.semantic_text, e.subject, e.sender
                 FROM embeddings emb
                 JOIN emails e ON e.id = emb.email_id
                 JOIN clean_texts c ON c.id = emb.clean_text_id
                 JOIN (
-                    SELECT email_id, MAX(id) AS embedding_id
-                    FROM embeddings
-                    GROUP BY email_id
+                    SELECT emb2.email_id, MAX(emb2.id) AS embedding_id
+                    FROM embeddings emb2
+                    JOIN clean_texts c2 ON c2.id = emb2.clean_text_id
+                    WHERE c2.excluded_from_main_clustering = 0 AND length(c2.semantic_text) > 0
+                    GROUP BY emb2.email_id
                 ) latest ON latest.embedding_id = emb.id
                 WHERE e.project_id = ?
+                    AND c.excluded_from_main_clustering = 0
+                    AND length(c.semantic_text) > 0
+                    AND c.id = (
+                        SELECT MAX(c3.id) FROM clean_texts c3 WHERE c3.email_id = c.email_id
+                    )
                 ORDER BY emb.id
                 """,
                 (project_id,),

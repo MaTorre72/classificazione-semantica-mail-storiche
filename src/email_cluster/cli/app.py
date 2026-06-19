@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 from typing import Annotated
 
 import numpy as np
@@ -30,6 +31,11 @@ ConfigOpt = Annotated[Path | None, typer.Option("--config", help="File YAML di c
 def _db_path(db: Path | None, config_path: Path | None) -> Path:
     config = load_config(config_path)
     return db or config.database.path
+
+
+def _terminal_safe(value: object) -> str:
+    text = "" if value is None else str(value)
+    return text.encode("cp1252", errors="replace").decode("cp1252")
 
 
 @app.command("init-db")
@@ -120,18 +126,98 @@ def clean(
     db: DbOpt = Path("data/email_cluster.sqlite"),
     config: ConfigOpt = Path("config/default.yaml"),
 ) -> None:
+    create_schema(db)
     cfg = load_config(config)
     count = 0
     with connect(db) as con:
         repo = Repository(con)
         project_id = repo.project_id(project)
         for row in repo.emails_needing_cleaning(project_id, cfg.cleaning.version):
-            text_parts = [row["subject"] or "", row["body_extracted_text"] or row["body_plain"] or ""]
-            text = "\n\n".join(part for part in text_parts if part.strip())
-            cleaned = build_clean_text(int(row["id"]), text, cfg.cleaning.version)
+            cleaned = build_clean_text(
+                int(row["id"]),
+                subject=row["subject"],
+                body=row["body_extracted_text"] or row["body_plain"] or "",
+                has_attachments=bool(row["has_attachments"]),
+                config=cfg.cleaning,
+            )
             repo.insert_clean_text(cleaned)
             count += 1
     console.print(f"Testi puliti creati: {count}")
+
+
+@app.command("clean-preview")
+def clean_preview(
+    email_id: Annotated[int, typer.Option("--email-id", help="ID email.")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+) -> None:
+    with connect(db) as con:
+        row = con.execute(
+            """
+            SELECT e.subject, e.body_extracted_text, e.body_plain, c.*
+            FROM emails e LEFT JOIN clean_texts c ON c.id = (
+                SELECT id FROM clean_texts WHERE email_id = e.id ORDER BY id DESC LIMIT 1
+            ) WHERE e.id = ?
+            """,
+            (email_id,),
+        ).fetchone()
+        if not row:
+            raise typer.BadParameter(f"Email non trovata: {email_id}")
+        fields = [
+            ("subject originale", row["subject"]),
+            ("testo estratto originale", row["body_extracted_text"] or row["body_plain"]),
+            ("subject_clean", row["subject_clean"]),
+            ("body_current_message_clean", row["body_current_message_clean"]),
+            ("semantic_text", row["semantic_text"]),
+            ("message_type", row["message_type"]),
+            ("quality_score", row["quality_score"]),
+            ("excluded_from_main_clustering", bool(row["excluded_from_main_clustering"])),
+            ("exclusion_reason", row["exclusion_reason"]),
+            ("cleaning_flags", row["cleaning_flags_json"]),
+        ]
+        for label, value in fields:
+            console.rule(label)
+            console.print(value if value not in (None, "") else "[dim](vuoto)[/dim]")
+
+
+@app.command("cleaning-report")
+def cleaning_report(
+    project: Annotated[str, typer.Option("--project", help="Nome progetto.")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+) -> None:
+    with connect(db) as con:
+        project_id = Repository(con).project_id(project)
+        rows = list(con.execute("""
+            SELECT e.id, e.subject, c.* FROM emails e JOIN clean_texts c ON c.id = (
+                SELECT id FROM clean_texts WHERE email_id = e.id ORDER BY id DESC LIMIT 1
+            ) WHERE e.project_id = ? ORDER BY e.id
+        """, (project_id,)))
+    if not rows:
+        console.print("Nessun testo pulito disponibile.")
+        return
+    excluded = [row for row in rows if row["excluded_from_main_clustering"]]
+    operational = [row for row in rows if not row["excluded_from_main_clustering"]]
+    flags = [json.loads(row["cleaning_flags_json"] or "{}") for row in rows]
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row["message_type"]] = counts.get(row["message_type"], 0) + 1
+    console.print(f"Totale email: {len(rows)} | operative: {len(operational)} | escluse: {len(excluded)}")
+    console.print(f"Lunghezza media clean_text: {sum(len(r['clean_text']) for r in rows)/len(rows):.1f}")
+    console.print(f"Lunghezza media semantic_text: {sum(len(r['semantic_text']) for r in rows)/len(rows):.1f}")
+    console.print(f"Email troppo brevi: {sum('sotto' in (r['exclusion_reason'] or '') for r in rows)}")
+    console.print("Distribuzione tipi: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+    for key in ("quoted_reply_removed", "disclaimer_removed", "signature_removed", "forwarded_block_removed"):
+        console.print(f"{key}: {sum(bool(item.get(key)) for item in flags)}")
+    for title, selected in (
+        ("Prime 20 escluse", excluded[:20]),
+        ("Operative piu corte", sorted(operational, key=lambda r: len(r["semantic_text"]))[:20]),
+        ("Operative piu lunghe", sorted(operational, key=lambda r: len(r["semantic_text"]), reverse=True)[:20]),
+    ):
+        table = Table(title=title)
+        for column in ("id", "tipo", "caratteri", "motivo", "oggetto"):
+            table.add_column(column)
+        for row in selected:
+            table.add_row(str(row["email_id"]), row["message_type"], str(len(row["semantic_text"])), row["exclusion_reason"] or "", _terminal_safe(row["subject"]))
+        console.print(table)
 
 
 @app.command("embed")
@@ -141,6 +227,7 @@ def embed(
     config: ConfigOpt = Path("config/default.yaml"),
     limit: Annotated[int | None, typer.Option("--limit", help="Limite batch.")] = None,
 ) -> None:
+    create_schema(db)
     cfg = load_config(config)
     engine = EmbeddingEngine(cfg.embedding.model_name)
     count = 0
@@ -159,7 +246,7 @@ def embed(
         rows = repo.clean_texts_without_embedding(project_id, model_id, limit)
         for row in rows:
             vector = engine.embed_email(
-                row["clean_text"],
+                row["semantic_text"],
                 cfg.embedding.chunk_size_chars,
                 cfg.embedding.chunk_overlap_chars,
             )
@@ -199,7 +286,7 @@ def cluster(
             project_id, model_id, cfg.umap.model_dump(), cfg.hdbscan.model_dump()
         )
         email_ids = [int(row["email_id"]) for row in rows]
-        texts = [row["clean_text"] for row in rows]
+        texts = [row["semantic_text"] for row in rows]
         for email_id, label, probability in zip(email_ids, labels, probabilities, strict=True):
             repo.insert_email_cluster(run_id, email_id, int(label), float(probability))
         for summary in summarize_clusters(labels, vectors, texts, email_ids):

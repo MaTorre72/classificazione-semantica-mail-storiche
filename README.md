@@ -60,8 +60,8 @@ Gli output runtime (`mail/`, `.venv/`, database SQLite e file in `data/output/`)
 
 1. `init-db` crea lo schema SQLite.
 2. `import` scansiona cartelle, file `.eml` e `.mbox`, estrae metadati, corpo e allegati.
-3. `clean` produce `clean_text` tracciato e versionato.
-4. `embed` genera embedding locali con Sentence Transformers.
+3. `clean` conserva `clean_text` per compatibilita' e produce `semantic_text` da oggetto e messaggio corrente.
+4. `embed` genera embedding locali solo dagli `semantic_text` operativi e sufficientemente informativi.
 5. `cluster` applica UMAP e HDBSCAN, salva run, assegnazioni e riepiloghi cluster.
 6. `search`, `clusters`, `show-cluster`, `export` e `report` rendono i dati interrogabili.
 
@@ -88,6 +88,20 @@ email-cluster report --db data/email_cluster.sqlite --output data/output/cluster
 - Il parser registra errori per singola email e continua.
 - Il database conserva testo estratto e testo pulito per controllare la qualita' del cleaning.
 - Tutto resta locale: nessun invio cloud obbligatorio.
+
+## Qualita' del cleaning
+
+`semantic_text` e' l'unico input per embedding e clustering. Firme, disclaimer, risposte citate,
+inoltri e footer vengono segmentati e registrati nei flag di cleaning. PEC, newsletter, inviti,
+notifiche automatiche, messaggi brevissimi e mail con soli allegati restano nel database ma sono
+esclusi dal clustering principale.
+
+```powershell
+email-cluster cleaning-report --project archivio_storico --db data/email_cluster.sqlite
+email-cluster clean-preview --email-id 42 --db data/email_cluster.sqlite
+```
+
+Le soglie e i tipi esclusi si modificano nella sezione `cleaning` di `config/default.yaml`.
 
 ## Struttura
 

@@ -13,3 +13,12 @@ def test_init_db_and_project_insert(tmp_path) -> None:
 
     assert project_id == same_id
 
+
+def test_init_db_migrates_existing_clean_texts_table(tmp_path) -> None:
+    db = tmp_path / "old.sqlite"
+    with connect(db) as con:
+        con.execute("CREATE TABLE clean_texts (id INTEGER PRIMARY KEY, clean_text TEXT)")
+    init_db(db)
+    with connect(db) as con:
+        columns = {row["name"] for row in con.execute("PRAGMA table_info(clean_texts)")}
+    assert {"semantic_text", "message_type", "quality_score", "exclusion_reason"} <= columns

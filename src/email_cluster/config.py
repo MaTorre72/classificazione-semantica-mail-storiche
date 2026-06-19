@@ -34,7 +34,18 @@ class HdbscanConfig(BaseModel):
 
 
 class CleaningConfig(BaseModel):
-    version: str = "v0.1.0"
+    version: str = "v1.0.1"
+    min_semantic_chars: int = 80
+    min_unique_words: int = 8
+    max_semantic_chars: int = 12000
+    exclude_message_types: list[str] = Field(default_factory=lambda: [
+        "short_ack", "auto_generated", "pec_receipt", "delivery_notification",
+        "calendar_message", "newsletter", "attachment_only", "forward_only", "low_information",
+    ])
+    signature_patterns: list[str] = Field(default_factory=list)
+    disclaimer_patterns: list[str] = Field(default_factory=list)
+    quote_patterns: list[str] = Field(default_factory=list)
+    automatic_patterns: list[str] = Field(default_factory=list)
 
 
 class AppConfig(BaseModel):
@@ -50,4 +61,3 @@ def load_config(path: Path | None = None) -> AppConfig:
         return AppConfig()
     data: dict[str, Any] = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return AppConfig.model_validate(data)
-

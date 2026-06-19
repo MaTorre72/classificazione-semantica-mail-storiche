@@ -37,6 +37,23 @@ email-cluster import --source "C:\archivi\mail" --project studio --db data/email
 email-cluster clean --project studio --db data/email_cluster.sqlite
 ```
 
+Il campo storico `clean_text` contiene il messaggio corrente pulito. `semantic_text` combina
+`subject_clean` e `body_current_message_clean` ed e' il solo testo usato dall'ML. Le email
+automatiche, PEC, newsletter, inviti, notifiche di consegna, messaggi troppo brevi e mail con soli
+allegati sono conservate ma marcate come escluse.
+
+Per controllare il risultato complessivo e ispezionare una singola email:
+
+```powershell
+email-cluster cleaning-report --project studio --db data/email_cluster.sqlite
+email-cluster clean-preview --email-id 42 --db data/email_cluster.sqlite
+```
+
+Il report mostra distribuzione dei tipi, esclusioni, lunghezze e rimozioni effettuate. Configura
+`min_semantic_chars`, `min_unique_words`, `max_semantic_chars`, `exclude_message_types` e i pattern
+aggiuntivi nella sezione `cleaning` di `config/default.yaml`. Cambia anche `version` quando modifichi
+le regole, cosi' il cleaning viene rigenerato senza cancellare lo storico.
+
 ## Generare embedding
 
 Richiede:

@@ -27,7 +27,10 @@ class EmbeddingEngine:
                 "sentence-transformers non e' installato. Usa: pip install -e .[ml]"
             ) from exc
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        try:
+            self.model = SentenceTransformer(model_name, local_files_only=True)
+        except (OSError, TypeError):
+            self.model = SentenceTransformer(model_name)
 
     @property
     def dimension(self) -> int:

@@ -40,4 +40,10 @@ class CleanedText:
     clean_text: str
     cleaning_version: str
     cleaning_flags: dict[str, bool]
-
+    subject_clean: str = ""
+    body_current_message_clean: str = ""
+    semantic_text: str = ""
+    message_type: str = "operational_email"
+    quality_score: float = 0.0
+    excluded_from_main_clustering: bool = False
+    exclusion_reason: str | None = None

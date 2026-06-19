@@ -68,6 +68,13 @@ CREATE TABLE IF NOT EXISTS clean_texts (
     clean_text TEXT NOT NULL,
     cleaning_version TEXT NOT NULL,
     cleaning_flags_json TEXT,
+    semantic_text TEXT NOT NULL DEFAULT '',
+    subject_clean TEXT NOT NULL DEFAULT '',
+    body_current_message_clean TEXT NOT NULL DEFAULT '',
+    message_type TEXT NOT NULL DEFAULT 'operational_email',
+    quality_score REAL NOT NULL DEFAULT 0,
+    excluded_from_main_clustering INTEGER NOT NULL DEFAULT 0,
+    exclusion_reason TEXT,
     created_at TEXT NOT NULL,
     UNIQUE(email_id, cleaning_version),
     FOREIGN KEY(email_id) REFERENCES emails(id)
@@ -176,4 +183,20 @@ def connect(db_path: Path) -> sqlite3.Connection:
 def init_db(db_path: Path) -> None:
     with connect(db_path) as con:
         con.executescript(SCHEMA_SQL)
+        _migrate_clean_texts(con)
 
+
+def _migrate_clean_texts(con: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in con.execute("PRAGMA table_info(clean_texts)")}
+    additions = {
+        "semantic_text": "TEXT NOT NULL DEFAULT ''",
+        "subject_clean": "TEXT NOT NULL DEFAULT ''",
+        "body_current_message_clean": "TEXT NOT NULL DEFAULT ''",
+        "message_type": "TEXT NOT NULL DEFAULT 'operational_email'",
+        "quality_score": "REAL NOT NULL DEFAULT 0",
+        "excluded_from_main_clustering": "INTEGER NOT NULL DEFAULT 0",
+        "exclusion_reason": "TEXT",
+    }
+    for name, declaration in additions.items():
+        if name not in columns:
+            con.execute(f"ALTER TABLE clean_texts ADD COLUMN {name} {declaration}")
