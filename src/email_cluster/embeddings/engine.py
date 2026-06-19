@@ -31,6 +31,8 @@ class EmbeddingEngine:
 
     @property
     def dimension(self) -> int:
+        if hasattr(self.model, "get_embedding_dimension"):
+            return int(self.model.get_embedding_dimension())
         return int(self.model.get_sentence_embedding_dimension())
 
     def embed_email(self, text: str, chunk_size: int, overlap: int) -> np.ndarray:
@@ -40,4 +42,3 @@ class EmbeddingEngine:
         vectors = self.model.encode(chunks, normalize_embeddings=True, show_progress_bar=False)
         weights = np.array([max(len(chunk), 1) for chunk in chunks], dtype="float32")
         return np.average(np.asarray(vectors, dtype="float32"), axis=0, weights=weights)
-

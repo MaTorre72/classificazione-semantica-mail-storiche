@@ -25,6 +25,18 @@ email-cluster cluster --project studio --db data/email_cluster.sqlite
 email-cluster clusters --db data/email_cluster.sqlite
 ```
 
+## Smoke test reale
+
+Sul campione locale `mail/mail_test_01.mbox` sono stati validati:
+
+- import di 350 email senza errori;
+- estrazione metadati di 643 allegati;
+- cleaning di 350 testi;
+- generazione di 339 embedding con `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`;
+- clustering di 339 email in 10 cluster piu' rumore.
+
+Gli output runtime (`mail/`, `.venv/`, database SQLite e file in `data/output/`) sono esclusi da Git.
+
 ## Pipeline
 
 1. `init-db` crea lo schema SQLite.
@@ -59,4 +71,3 @@ config/
 tests/
 data/
 ```
-
