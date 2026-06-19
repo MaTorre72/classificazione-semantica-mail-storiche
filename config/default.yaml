@@ -1,0 +1,25 @@
+database:
+  path: data/email_cluster.sqlite
+
+embedding:
+  model_name: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+  chunk_size_chars: 2000
+  chunk_overlap_chars: 200
+  batch_size: 32
+
+umap:
+  n_neighbors: 15
+  n_components: 5
+  min_dist: 0.0
+  metric: cosine
+  random_state: 42
+
+hdbscan:
+  min_cluster_size: 10
+  min_samples: 5
+  metric: euclidean
+  cluster_selection_method: eom
+
+cleaning:
+  version: v0.1.0
+
