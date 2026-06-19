@@ -87,6 +87,33 @@ def import_emails(
     console.print(f"Importate: {imported} | Duplicate: {duplicates} | Errori: {errors}")
 
 
+@app.command("run-pipeline")
+def run_pipeline(
+    source: Annotated[Path, typer.Option("--source", exists=True, help="Cartella o file email.")],
+    project: Annotated[str, typer.Option("--project", help="Nome progetto.")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    config: ConfigOpt = Path("config/default.yaml"),
+    skip_ml: Annotated[bool, typer.Option("--skip-ml", help="Salta embedding e clustering.")] = False,
+    export_dir: Annotated[Path, typer.Option("--export-dir", help="Cartella output.")] = Path("data/output"),
+) -> None:
+    console.rule("Init DB")
+    init_db(db)
+    console.rule("Import")
+    import_emails(source=source, project=project, db=db)
+    console.rule("Cleaning")
+    clean(project=project, db=db, config=config)
+    if not skip_ml:
+        console.rule("Embedding")
+        embed(project=project, db=db, config=config)
+        console.rule("Clustering")
+        cluster(project=project, db=db, config=config)
+        console.rule("Cluster report")
+        report(output=export_dir / "cluster_report.md", db=db)
+    console.rule("Export")
+    export_cmd(output=export_dir / "emails.csv", fmt="csv", db=db)
+    export_cmd(output=export_dir / "emails.json", fmt="json", db=db)
+
+
 @app.command("clean")
 def clean(
     project: Annotated[str, typer.Option("--project", help="Nome progetto.")],
@@ -209,6 +236,47 @@ def list_clusters(db: DbOpt = Path("data/email_cluster.sqlite"), run: int | None
         console.print(table)
 
 
+@app.command("status")
+def status(db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+    with connect(db) as con:
+        table = Table(title=f"Database {db}")
+        table.add_column("tabella")
+        table.add_column("record", justify="right")
+        for name in [
+            "projects",
+            "source_files",
+            "emails",
+            "attachments",
+            "clean_texts",
+            "embedding_models",
+            "embeddings",
+            "clustering_runs",
+            "email_clusters",
+            "clusters",
+            "errors",
+        ]:
+            count = con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
+            table.add_row(name, str(count))
+        console.print(table)
+
+        latest_run = con.execute(
+            "SELECT id, status, completed_at FROM clustering_runs ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if latest_run:
+            clustered = con.execute(
+                "SELECT count(*) FROM email_clusters WHERE clustering_run_id = ?",
+                (latest_run["id"],),
+            ).fetchone()[0]
+            noise = con.execute(
+                "SELECT count(*) FROM email_clusters WHERE clustering_run_id = ? AND is_noise = 1",
+                (latest_run["id"],),
+            ).fetchone()[0]
+            console.print(
+                f"Ultimo clustering run: {latest_run['id']} | "
+                f"stato: {latest_run['status']} | email: {clustered} | rumore: {noise}"
+            )
+
+
 @app.command("show-cluster")
 def show_cluster(
     cluster_id: Annotated[int, typer.Argument(help="ID cluster.")],
@@ -265,7 +333,12 @@ def search(
             f"""
             SELECT e.id, e.sent_at, e.sender, e.subject
             FROM emails e
-            LEFT JOIN clean_texts c ON c.email_id = e.id
+            LEFT JOIN clean_texts c ON c.id = (
+                SELECT c2.id FROM clean_texts c2
+                WHERE c2.email_id = e.id
+                ORDER BY c2.id DESC
+                LIMIT 1
+            )
             {where}
             ORDER BY e.sent_at DESC, e.id DESC
             LIMIT ?
@@ -301,4 +374,3 @@ def report(
 
 if __name__ == "__main__":
     app()
-

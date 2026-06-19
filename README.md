@@ -25,6 +25,13 @@ email-cluster cluster --project studio --db data/email_cluster.sqlite
 email-cluster clusters --db data/email_cluster.sqlite
 ```
 
+Per eseguire tutta la pipeline in un comando:
+
+```powershell
+email-cluster run-pipeline --source mail --project archivio_storico --db data/email_cluster.sqlite
+email-cluster status --db data/email_cluster.sqlite
+```
+
 ## Smoke test reale
 
 Sul campione locale `mail/mail_test_01.mbox` sono stati validati:

@@ -65,6 +65,7 @@ def extract_keywords(texts: list[str], limit: int = 10) -> list[str]:
         max_features=max_features,
         ngram_range=(1, 2),
         stop_words=list(ITALIAN_STOPWORDS),
+        token_pattern=r"(?u)\b[^\W\d_][^\W\d_]{2,}\b",
         min_df=1,
     )
     try:
@@ -100,5 +101,8 @@ ITALIAN_STOPWORDS = {
     "a", "ad", "al", "alla", "alle", "anche", "che", "con", "da", "dei", "del", "della",
     "di", "e", "il", "in", "la", "le", "lo", "mi", "non", "o", "per", "si", "sono", "su",
     "un", "una", "vi", "vs", "buongiorno", "grazie", "saluti", "cordiali",
+    "and", "are", "com", "email", "for", "from", "http", "https", "intended", "is", "it",
+    "mail", "of", "the", "this", "to", "www", "you", "your",
+    "all", "any", "cid", "fax", "inc", "mailto", "message", "messaggio", "pec", "please",
+    "questo", "tel", "via",
 }
-

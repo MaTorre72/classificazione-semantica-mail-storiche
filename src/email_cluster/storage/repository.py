@@ -265,6 +265,11 @@ class Repository:
                 FROM embeddings emb
                 JOIN emails e ON e.id = emb.email_id
                 JOIN clean_texts c ON c.id = emb.clean_text_id
+                JOIN (
+                    SELECT email_id, MAX(id) AS embedding_id
+                    FROM embeddings
+                    GROUP BY email_id
+                ) latest ON latest.embedding_id = emb.id
                 WHERE e.project_id = ?
                 ORDER BY emb.id
                 """,
@@ -337,4 +342,3 @@ class Repository:
                 utcnow(),
             ),
         )
-

@@ -33,6 +33,7 @@ SIGNATURE_PATTERNS = [
 def build_clean_text(email_id: int, text: str, version: str = "v0.1.0") -> CleanedText:
     normalized = normalize_whitespace(remove_html_artifacts(text or ""))
     cleaned, flags = _remove_patterns(normalized)
+    cleaned = remove_low_signal_lines(cleaned)
     cleaned = normalize_whitespace(cleaned)
     return CleanedText(
         email_id=email_id,
@@ -56,6 +57,35 @@ def remove_html_artifacts(text: str) -> str:
     text = re.sub(r"&lt;", "<", text, flags=re.I)
     text = re.sub(r"&gt;", ">", text, flags=re.I)
     return text
+
+
+def remove_low_signal_lines(text: str) -> str:
+    lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if _is_low_signal_line(stripped):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def _is_low_signal_line(line: str) -> bool:
+    lowered = line.lower()
+    if not line:
+        return False
+    if re.fullmatch(r"https?://\S+", lowered):
+        return True
+    if lowered.startswith(("http://", "https://", "www.")) and len(line.split()) <= 3:
+        return True
+    if re.fullmatch(r"[\w.\-+]+@[\w.\-]+\.\w+", lowered):
+        return True
+    if lowered.startswith(("cid:", "image", "[image", "mailto:", "unsubscribe", "annulla iscrizione")):
+        return True
+    if "mailto:" in lowered and len(line.split()) <= 8:
+        return True
+    if len(line) > 120 and len(re.findall(r"https?://|%[0-9a-f]{2}|[A-Za-z0-9]{24,}", line)) >= 2:
+        return True
+    return False
 
 
 def _remove_patterns(text: str) -> tuple[str, dict[str, bool]]:

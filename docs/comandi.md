@@ -6,6 +6,15 @@
 email-cluster init-db --db data/email_cluster.sqlite
 ```
 
+## Eseguire tutta la pipeline
+
+```powershell
+email-cluster run-pipeline --source mail --project archivio_storico --db data/email_cluster.sqlite
+email-cluster status --db data/email_cluster.sqlite
+```
+
+Usa `--skip-ml` se vuoi fermarti a import, cleaning ed export senza embedding/clustering.
+
 ## Importare una cartella
 
 ```powershell

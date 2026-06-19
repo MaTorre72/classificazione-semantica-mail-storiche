@@ -15,3 +15,15 @@ Questo messaggio e i suoi allegati sono riservati."""
     assert "vecchio messaggio" not in cleaned.clean_text
     assert cleaned.cleaning_flags["quoted_reply_removed"]
 
+
+def test_cleaning_removes_low_signal_links_and_mailto_lines() -> None:
+    text = """Ciao Marco,
+trovi l'analisi in allegato.
+https://example.com/tracking
+mailto:qualcuno@example.com
+"""
+    cleaned = build_clean_text(1, text)
+
+    assert "analisi in allegato" in cleaned.clean_text
+    assert "https://example.com/tracking" not in cleaned.clean_text
+    assert "mailto:" not in cleaned.clean_text
