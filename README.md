@@ -25,6 +25,23 @@ email-cluster cluster --project studio --db data/email_cluster.sqlite
 email-cluster clusters --db data/email_cluster.sqlite
 ```
 
+Il cleaning decide quali email sono semanticamente idonee; il clustering lavora solo sugli
+embedding di `operational_email` non escluse. Le email escluse restano nel database. Il rumore
+HDBSCAN e' diverso: indica email ammesse al clustering ma non assegnate con sufficiente densita'.
+
+Sono disponibili tre profili: `conservative`, `balanced` ed `exploratory`.
+
+```powershell
+email-cluster cluster --project studio --profile balanced --db data/email_cluster.sqlite
+email-cluster cluster-sweep --project studio --limit 6 --db data/email_cluster.sqlite
+email-cluster compare-runs --project studio --db data/email_cluster.sqlite
+email-cluster clustering-report --run-id 12 --db data/email_cluster.sqlite
+```
+
+Un cluster dominante contiene una quota anomala delle email e viene segnalato automaticamente.
+Silhouette, Davies-Bouldin e Calinski-Harabasz aiutano il confronto, ma non misurano da sole la
+qualita' semantica: vanno lette insieme a rumore, dimensioni, probabilita' ed esempi rappresentativi.
+
 Per eseguire tutta la pipeline in un comando:
 
 ```powershell

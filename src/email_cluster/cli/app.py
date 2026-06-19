@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+from itertools import islice, product
 from typing import Annotated
 
 import numpy as np
@@ -11,6 +12,7 @@ from rich.table import Table
 
 from email_cluster.cleaning.normalizer import build_clean_text
 from email_cluster.clustering.engine import run_clustering, summarize_clusters
+from email_cluster.clustering.diagnostics import calculate_metrics, diagnostic_warnings
 from email_cluster.config import load_config
 from email_cluster.embeddings.engine import EmbeddingEngine
 from email_cluster.export.writers import export_cluster_review, export_emails, write_markdown_report
@@ -267,32 +269,138 @@ def cluster(
     project: Annotated[str, typer.Option("--project", help="Nome progetto.")],
     db: DbOpt = Path("data/email_cluster.sqlite"),
     config: ConfigOpt = Path("config/default.yaml"),
+    profile: Annotated[str | None, typer.Option("--profile", help="Profilo clustering.")] = None,
 ) -> None:
+    create_schema(db)
     cfg = load_config(config)
     with connect(db) as con:
         repo = Repository(con)
         project_id = repo.project_id(project)
-        rows = repo.embeddings_for_project(project_id)
-        if not rows:
-            raise typer.BadParameter("Nessun embedding disponibile. Esegui prima embed.")
-        vectors = np.vstack([blob_to_embedding(row["embedding"]) for row in rows])
-        labels, probabilities = run_clustering(
-            vectors,
-            cfg.umap.model_dump(),
-            cfg.hdbscan.model_dump(),
-        )
-        model_id = int(rows[0]["model_id"])
-        run_id = repo.create_clustering_run(
-            project_id, model_id, cfg.umap.model_dump(), cfg.hdbscan.model_dump()
-        )
-        email_ids = [int(row["email_id"]) for row in rows]
-        texts = [row["semantic_text"] for row in rows]
-        for email_id, label, probability in zip(email_ids, labels, probabilities, strict=True):
-            repo.insert_email_cluster(run_id, email_id, int(label), float(probability))
-        for summary in summarize_clusters(labels, vectors, texts, email_ids):
-            repo.insert_cluster_summary(run_id=run_id, **summary)
-        repo.complete_clustering_run(run_id)
+        profile_name = profile or cfg.clustering.active_profile
+        selected = cfg.clustering.profiles.get(profile_name)
+        if selected is None:
+            raise typer.BadParameter(f"Profilo sconosciuto: {profile_name}")
+        run_id = _execute_clustering(con, repo, project_id, cfg, profile_name, selected.umap.model_dump(), selected.hdbscan.model_dump())
     console.print(f"Clustering run completato: {run_id}")
+
+
+def _execute_clustering(con, repo, project_id, cfg, profile_name, umap_params, hdbscan_params) -> int:
+    rows = repo.embeddings_for_project(
+        project_id, min_chars=cfg.cleaning.min_semantic_chars,
+        message_types=cfg.clustering.allowed_message_types,
+    )
+    if not rows:
+        raise typer.BadParameter("Nessun embedding idoneo disponibile. Esegui prima embed.")
+    vectors = np.vstack([blob_to_embedding(row["embedding"]) for row in rows])
+    labels, probabilities = run_clustering(vectors, umap_params, hdbscan_params, normalize_embeddings=cfg.clustering.normalize_embeddings)
+    model_ids = {int(row["model_id"]) for row in rows}
+    if len(model_ids) != 1:
+        raise typer.BadParameter("Gli embedding selezionati appartengono a modelli diversi.")
+    run_id = repo.create_clustering_run(project_id, model_ids.pop(), umap_params, hdbscan_params, profile_name)
+    email_ids = [int(row["email_id"]) for row in rows]
+    for email_id, label, probability in zip(email_ids, labels, probabilities, strict=True):
+        repo.insert_email_cluster(run_id, email_id, int(label), float(probability))
+    summaries = summarize_clusters(
+        labels, vectors, [row["semantic_text"] for row in rows], email_ids,
+        [row["subject"] or "" for row in rows], [row["sender"] or "" for row in rows],
+        probabilities, cfg.clustering.technical_stopwords,
+    )
+    for summary in summaries:
+        repo.insert_cluster_summary(run_id=run_id, **summary)
+    total_project = con.execute("SELECT count(*) FROM emails WHERE project_id = ?", (project_id,)).fetchone()[0]
+    metrics = calculate_metrics(
+        labels, probabilities, vectors, excluded_before=total_project - len(rows),
+        small_size=cfg.clustering.min_cluster_size_absolute,
+        low_confidence=cfg.clustering.low_confidence_threshold,
+    )
+    warnings = diagnostic_warnings(
+        metrics, max_noise=cfg.clustering.max_noise_ratio_warning,
+        max_largest=cfg.clustering.max_largest_cluster_ratio_warning,
+        min_clusters=cfg.clustering.min_clusters_warning,
+    )
+    repo.save_clustering_metrics(run_id, metrics, warnings)
+    repo.complete_clustering_run(run_id)
+    return run_id
+
+
+@app.command("cluster-sweep")
+def cluster_sweep(
+    project: Annotated[str, typer.Option("--project")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    config: ConfigOpt = Path("config/default.yaml"),
+    limit: Annotated[int | None, typer.Option("--limit")] = None,
+) -> None:
+    create_schema(db)
+    cfg = load_config(config)
+    sweep = cfg.clustering.sweep
+    maximum = min(limit or sweep.max_combinations, sweep.max_combinations)
+    combinations = islice(product(sweep.n_neighbors, sweep.n_components, sweep.min_cluster_size, sweep.min_samples), maximum)
+    run_ids: list[int] = []
+    with connect(db) as con:
+        repo = Repository(con)
+        project_id = repo.project_id(project)
+        for index, (neighbors, components, cluster_size, samples) in enumerate(combinations, 1):
+            umap_params = {"n_neighbors": neighbors, "n_components": components, "min_dist": 0.0, "metric": "cosine", "random_state": 42}
+            hdbscan_params = {"min_cluster_size": cluster_size, "min_samples": samples, "metric": "euclidean", "cluster_selection_method": "eom"}
+            run_ids.append(_execute_clustering(con, repo, project_id, cfg, f"sweep-{index}", umap_params, hdbscan_params))
+            console.print(f"Sweep {index}/{maximum}: run {run_ids[-1]}")
+    console.print(f"Sweep completato: {len(run_ids)} run")
+
+
+@app.command("compare-runs")
+def compare_runs(project: Annotated[str, typer.Option("--project")], db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+    create_schema(db)
+    with connect(db) as con:
+        project_id = Repository(con).project_id(project)
+        rows = con.execute("""
+            SELECT * FROM clustering_runs WHERE project_id = ? AND status = 'completed'
+                AND total_emails_considered IS NOT NULL
+            ORDER BY total_clusters DESC, largest_cluster_ratio ASC, noise_ratio ASC, id DESC
+        """, (project_id,))
+        table = Table(title="Confronto clustering run")
+        for column in ("run", "profilo", "email", "cluster", "rumore", "dominante", "mediana", "prob. media", "silhouette", "warning", "data"):
+            table.add_column(column)
+        for row in rows:
+            warnings = json.loads(row["warnings_json"] or "[]")
+            table.add_row(str(row["id"]), row["profile_name"] or "legacy", str(row["total_emails_considered"] or 0), str(row["total_clusters"] or 0), _pct(row["noise_ratio"]), _pct(row["largest_cluster_ratio"]), str(row["median_cluster_size"] or 0), _score(row["mean_cluster_probability"]), _score(row["silhouette_score"]), str(len(warnings)), row["started_at"])
+        console.print(table)
+
+
+@app.command("clustering-report")
+def clustering_report(run_id: Annotated[int, typer.Option("--run-id")], db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+    create_schema(db)
+    with connect(db) as con:
+        run = con.execute("SELECT * FROM clustering_runs WHERE id = ?", (run_id,)).fetchone()
+        if not run:
+            raise typer.BadParameter(f"Run non trovata: {run_id}")
+        console.print(f"Run {run_id} | profilo: {run['profile_name'] or 'legacy'} | stato: {run['status']}")
+        console.print("UMAP: " + run["umap_parameters_json"])
+        console.print("HDBSCAN: " + run["hdbscan_parameters_json"])
+        console.print(f"Considerate: {run['total_emails_considered']} | escluse prima: {run['excluded_before_clustering']} | rumore HDBSCAN: {run['total_noise']} ({_pct(run['noise_ratio'])})")
+        console.print(f"Cluster: {run['total_clusters']} | cluster dominante: {_pct(run['largest_cluster_ratio'])} | probabilita media: {_score(run['mean_cluster_probability'])}")
+        for warning in json.loads(run["warnings_json"] or "[]"):
+            console.print(f"[yellow]ATTENZIONE[/yellow] {warning}")
+        table = Table(title="Cluster")
+        for column in ("id", "size", "label", "prob.", "keyword", "rappresentanti"):
+            table.add_column(column)
+        for row in con.execute("SELECT * FROM clusters WHERE clustering_run_id = ? ORDER BY size DESC", (run_id,)):
+            table.add_row(str(row["cluster_id"]), str(row["size"]), row["label_manual"] or row["label_auto"], _score(row["mean_probability"]), ", ".join(json.loads(row["keywords_json"] or "[]")[:5]), row["representative_email_ids_json"] or "[]")
+        console.print(table)
+        noise = Table(title="Prime 20 email rumore HDBSCAN")
+        noise.add_column("id")
+        noise.add_column("oggetto")
+        noise.add_column("prob.")
+        for row in con.execute("""SELECT e.id, e.subject, ec.probability FROM email_clusters ec JOIN emails e ON e.id=ec.email_id WHERE ec.clustering_run_id=? AND ec.is_noise=1 ORDER BY ec.probability LIMIT 20""", (run_id,)):
+            noise.add_row(str(row["id"]), _terminal_safe(row["subject"]), _score(row["probability"]))
+        console.print(noise)
+
+
+def _pct(value) -> str:
+    return "n/d" if value is None else f"{value:.1%}"
+
+
+def _score(value) -> str:
+    return "n/d" if value is None else f"{value:.3f}"
 
 
 @app.command("clusters")

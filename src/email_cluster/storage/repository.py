@@ -268,10 +268,19 @@ class Repository:
             ),
         )
 
-    def embeddings_for_project(self, project_id: int) -> list[sqlite3.Row]:
+    def embeddings_for_project(
+        self, project_id: int, *, min_chars: int = 1,
+        message_types: list[str] | None = None, model_id: int | None = None,
+    ) -> list[sqlite3.Row]:
+        allowed = message_types or ["operational_email"]
+        placeholders = ",".join("?" for _ in allowed)
+        model_clause = "AND emb.model_id = ?" if model_id is not None else ""
+        params: list[Any] = [project_id, min_chars, *allowed]
+        if model_id is not None:
+            params.append(model_id)
         return list(
             self.con.execute(
-                """
+                f"""
                 SELECT emb.*, c.clean_text, c.semantic_text, e.subject, e.sender
                 FROM embeddings emb
                 JOIN emails e ON e.id = emb.email_id
@@ -286,27 +295,31 @@ class Repository:
                 WHERE e.project_id = ?
                     AND c.excluded_from_main_clustering = 0
                     AND length(c.semantic_text) > 0
+                    AND length(c.semantic_text) >= ?
+                    AND c.message_type IN ({placeholders})
+                    {model_clause}
                     AND c.id = (
                         SELECT MAX(c3.id) FROM clean_texts c3 WHERE c3.email_id = c.email_id
                     )
                 ORDER BY emb.id
                 """,
-                (project_id,),
+                params,
             )
         )
 
     def create_clustering_run(
-        self, project_id: int, model_id: int, umap_params: dict[str, Any], hdbscan_params: dict[str, Any]
+        self, project_id: int, model_id: int, umap_params: dict[str, Any], hdbscan_params: dict[str, Any],
+        profile_name: str | None = None,
     ) -> int:
         cur = self.con.execute(
             """
             INSERT INTO clustering_runs (
                 project_id, embedding_model_id, umap_parameters_json,
-                hdbscan_parameters_json, started_at, status
+                hdbscan_parameters_json, started_at, status, profile_name, random_state
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (project_id, model_id, json_dumps(umap_params), json_dumps(hdbscan_params), utcnow(), "running"),
+            (project_id, model_id, json_dumps(umap_params), json_dumps(hdbscan_params), utcnow(), "running", profile_name, umap_params.get("random_state")),
         )
         return int(cur.lastrowid)
 
@@ -315,6 +328,12 @@ class Repository:
             "UPDATE clustering_runs SET completed_at = ?, status = ? WHERE id = ?",
             (utcnow(), status, run_id),
         )
+
+    def save_clustering_metrics(self, run_id: int, metrics: dict[str, Any], warnings: list[str]) -> None:
+        fields = list(metrics) + ["warnings_json"]
+        values = [metrics[name] for name in metrics] + [json_dumps(warnings)]
+        assignments = ", ".join(f"{name} = ?" for name in fields)
+        self.con.execute(f"UPDATE clustering_runs SET {assignments} WHERE id = ?", (*values, run_id))
 
     def insert_email_cluster(
         self, run_id: int, email_id: int, cluster_id: int, probability: float | None
@@ -339,14 +358,19 @@ class Repository:
         size: int,
         coherence_score: float | None = None,
         density_score: float | None = None,
+        recurring_subjects: list[str] | None = None,
+        recurring_senders: list[str] | None = None,
+        mean_probability: float | None = None,
+        confidence_label: float | None = None,
     ) -> None:
         self.con.execute(
             """
             INSERT OR REPLACE INTO clusters (
                 clustering_run_id, cluster_id, label_auto, keywords_json,
-                representative_email_ids_json, size, coherence_score, density_score, created_at
+                representative_email_ids_json, size, coherence_score, density_score, created_at,
+                recurring_subjects_json, recurring_senders_json, mean_probability, confidence_label
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -358,6 +382,10 @@ class Repository:
                 coherence_score,
                 density_score,
                 utcnow(),
+                json_dumps(recurring_subjects or []),
+                json_dumps(recurring_senders or []),
+                mean_probability,
+                confidence_label,
             ),
         )
 

@@ -76,6 +76,33 @@ email-cluster clusters --db data/email_cluster.sqlite
 email-cluster show-cluster 12 --db data/email_cluster.sqlite
 ```
 
+Il profilo predefinito e' `balanced`; puoi scegliere anche `conservative` (cluster piu' prudenti e
+grandi) o `exploratory` (cluster piu' piccoli e maggiore dettaglio):
+
+```powershell
+email-cluster cluster --project studio --profile exploratory --db data/email_cluster.sqlite
+```
+
+Solo le email operative con `semantic_text` idoneo entrano nel clustering. Le esclusioni del cleaning
+restano separate dal rumore HDBSCAN, che riguarda invece email considerate ma non assegnate.
+
+## Sweep e confronto run
+
+```powershell
+email-cluster cluster-sweep --project studio --limit 6 --db data/email_cluster.sqlite
+email-cluster compare-runs --project studio --db data/email_cluster.sqlite
+email-cluster clustering-report --run-id 12 --db data/email_cluster.sqlite
+```
+
+Lo sweep prova combinazioni configurate in `config/default.yaml`, rispettando `max_combinations`.
+`compare-runs` ordina le run e mostra cluster, rumore, cluster dominante, probabilita', silhouette e
+warning. `clustering-report` espone parametri, esclusioni a monte, rumore, distribuzione, etichette e
+messaggi rappresentativi.
+
+Un cluster dominante supera la quota configurata delle email e suggerisce parametri troppo
+permissivi o temi ancora poco separati. Silhouette, Davies-Bouldin e Calinski-Harabasz sono indicatori
+di supporto: sugli embedding semantici e con HDBSCAN non devono essere interpretati in assoluto.
+
 Il primo comando `embed` puo' scaricare il modello da Hugging Face nella cache utente locale. Su Windows puo' comparire un warning sui symlink della cache: non blocca l'esecuzione, usa solo piu' spazio disco.
 
 ## Revisione umana dei cluster

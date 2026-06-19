@@ -126,6 +126,27 @@ CREATE TABLE IF NOT EXISTS clustering_runs (
     started_at TEXT NOT NULL,
     completed_at TEXT,
     status TEXT NOT NULL,
+    profile_name TEXT,
+    total_emails_considered INTEGER,
+    excluded_before_clustering INTEGER,
+    total_clusters INTEGER,
+    total_noise INTEGER,
+    noise_ratio REAL,
+    largest_cluster_size INTEGER,
+    largest_cluster_ratio REAL,
+    median_cluster_size REAL,
+    mean_cluster_size REAL,
+    min_cluster_size INTEGER,
+    max_cluster_size INTEGER,
+    number_of_small_clusters INTEGER,
+    number_of_large_clusters INTEGER,
+    silhouette_score REAL,
+    davies_bouldin_score REAL,
+    calinski_harabasz_score REAL,
+    mean_cluster_probability REAL,
+    low_confidence_assignments INTEGER,
+    random_state INTEGER,
+    warnings_json TEXT,
     FOREIGN KEY(project_id) REFERENCES projects(id),
     FOREIGN KEY(embedding_model_id) REFERENCES embedding_models(id)
 );
@@ -153,6 +174,10 @@ CREATE TABLE IF NOT EXISTS clusters (
     size INTEGER,
     coherence_score REAL,
     density_score REAL,
+    recurring_subjects_json TEXT,
+    recurring_senders_json TEXT,
+    mean_probability REAL,
+    confidence_label REAL,
     created_at TEXT NOT NULL,
     UNIQUE(clustering_run_id, cluster_id),
     FOREIGN KEY(clustering_run_id) REFERENCES clustering_runs(id)
@@ -184,6 +209,20 @@ def init_db(db_path: Path) -> None:
     with connect(db_path) as con:
         con.executescript(SCHEMA_SQL)
         _migrate_clean_texts(con)
+        _migrate_table(con, "clustering_runs", {
+            "profile_name": "TEXT", "total_emails_considered": "INTEGER", "excluded_before_clustering": "INTEGER",
+            "total_clusters": "INTEGER", "total_noise": "INTEGER", "noise_ratio": "REAL",
+            "largest_cluster_size": "INTEGER", "largest_cluster_ratio": "REAL", "median_cluster_size": "REAL",
+            "mean_cluster_size": "REAL", "min_cluster_size": "INTEGER", "max_cluster_size": "INTEGER",
+            "number_of_small_clusters": "INTEGER", "number_of_large_clusters": "INTEGER",
+            "silhouette_score": "REAL", "davies_bouldin_score": "REAL", "calinski_harabasz_score": "REAL",
+            "mean_cluster_probability": "REAL", "low_confidence_assignments": "INTEGER",
+            "random_state": "INTEGER", "warnings_json": "TEXT",
+        })
+        _migrate_table(con, "clusters", {
+            "recurring_subjects_json": "TEXT", "recurring_senders_json": "TEXT",
+            "mean_probability": "REAL", "confidence_label": "REAL",
+        })
 
 
 def _migrate_clean_texts(con: sqlite3.Connection) -> None:
@@ -200,3 +239,10 @@ def _migrate_clean_texts(con: sqlite3.Connection) -> None:
     for name, declaration in additions.items():
         if name not in columns:
             con.execute(f"ALTER TABLE clean_texts ADD COLUMN {name} {declaration}")
+
+
+def _migrate_table(con: sqlite3.Connection, table: str, additions: dict[str, str]) -> None:
+    columns = {row["name"] for row in con.execute(f"PRAGMA table_info({table})")}
+    for name, declaration in additions.items():
+        if name not in columns:
+            con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
