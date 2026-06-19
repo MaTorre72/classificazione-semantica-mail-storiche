@@ -51,6 +51,14 @@ email-cluster show-cluster 12 --db data/email_cluster.sqlite
 
 Il primo comando `embed` puo' scaricare il modello da Hugging Face nella cache utente locale. Su Windows puo' comparire un warning sui symlink della cache: non blocca l'esecuzione, usa solo piu' spazio disco.
 
+## Revisione umana dei cluster
+
+```powershell
+email-cluster review-clusters --db data/email_cluster.sqlite --output data/output/cluster_review.csv
+email-cluster set-label 2 "Pratiche tecniche e allegati" --db data/email_cluster.sqlite
+email-cluster report --db data/email_cluster.sqlite --output data/output/cluster_report.md
+```
+
 ## Ricerca ed export
 
 ```powershell

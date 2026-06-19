@@ -53,6 +53,22 @@ Gli output runtime (`mail/`, `.venv/`, database SQLite e file in `data/output/`)
 5. `cluster` applica UMAP e HDBSCAN, salva run, assegnazioni e riepiloghi cluster.
 6. `search`, `clusters`, `show-cluster`, `export` e `report` rendono i dati interrogabili.
 
+## Guide operative
+
+- [Uso operativo](docs/uso_operativo.md): client email, IMAP, sicurezza su archivi reali, MBOX enormi e revisione umana dei cluster.
+- [Comandi CLI](docs/comandi.md): riferimento rapido dei comandi.
+- [Architettura](docs/architettura.md): moduli e responsabilita'.
+
+## Revisione cluster
+
+Per rendere la classificazione piu' umana:
+
+```powershell
+email-cluster review-clusters --db data/email_cluster.sqlite --output data/output/cluster_review.csv
+email-cluster set-label 0 "Acquisti e notifiche Amazon" --db data/email_cluster.sqlite
+email-cluster report --db data/email_cluster.sqlite --output data/output/cluster_report.md
+```
+
 ## Principi
 
 - Ogni fase e' rieseguibile senza rifare quelle precedenti.

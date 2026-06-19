@@ -21,12 +21,51 @@ def export_emails(con: sqlite3.Connection, output: Path, fmt: str, cluster: int 
     return len(rows)
 
 
-def write_markdown_report(con: sqlite3.Connection, output: Path, run_id: int | None = None) -> int:
+def export_cluster_review(con: sqlite3.Connection, output: Path, run_id: int | None = None) -> int:
+    run_id = _resolve_run_id(con, run_id)
     output.parent.mkdir(parents=True, exist_ok=True)
     if run_id is None:
-        row = con.execute("SELECT id FROM clustering_runs ORDER BY id DESC LIMIT 1").fetchone()
-        if row:
-            run_id = int(row["id"])
+        output.write_text("run_id,cluster_id,size,label_auto,label_manual,keywords,representatives\n", encoding="utf-8")
+        return 0
+    rows = _cluster_rows(con, run_id)
+    with output.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "run_id",
+                "cluster_id",
+                "size",
+                "label_auto",
+                "label_manual",
+                "keywords",
+                "representatives",
+            ],
+        )
+        writer.writeheader()
+        for row in rows:
+            representatives = _representative_rows(
+                con, json.loads(row["representative_email_ids_json"] or "[]")
+            )
+            writer.writerow(
+                {
+                    "run_id": run_id,
+                    "cluster_id": row["cluster_id"],
+                    "size": row["size"],
+                    "label_auto": row["label_auto"],
+                    "label_manual": row["label_manual"],
+                    "keywords": ", ".join(json.loads(row["keywords_json"] or "[]")),
+                    "representatives": " | ".join(
+                        f"{representative['id']}: {representative['subject'] or ''}"
+                        for representative in representatives
+                    ),
+                }
+            )
+    return len(rows)
+
+
+def write_markdown_report(con: sqlite3.Connection, output: Path, run_id: int | None = None) -> int:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    run_id = _resolve_run_id(con, run_id)
     lines = ["# Report cluster", ""]
     if run_id is None:
         lines.append("Nessun clustering run presente.")
@@ -38,18 +77,7 @@ def write_markdown_report(con: sqlite3.Connection, output: Path, run_id: int | N
     noise = con.execute(
         "SELECT count(*) FROM email_clusters WHERE clustering_run_id = ? AND is_noise = 1", (run_id,)
     ).fetchone()[0]
-    rows = list(
-        con.execute(
-            """
-            SELECT cluster_id, label_auto, keywords_json, representative_email_ids_json,
-                   size, coherence_score
-            FROM clusters
-            WHERE clustering_run_id = ?
-            ORDER BY cluster_id
-            """,
-            (run_id,),
-        )
-    )
+    rows = _cluster_rows(con, run_id)
     lines.append(f"Run: `{run_id}`")
     lines.append(f"Email clusterizzate: `{total}`")
     lines.append(f"Rumore: `{noise}` ({_percentage(noise, total)})")
@@ -60,7 +88,7 @@ def write_markdown_report(con: sqlite3.Connection, output: Path, run_id: int | N
         )
         lines.extend(
             [
-                f"## Cluster {row['cluster_id']} - {row['label_auto']}",
+                f"## Cluster {row['cluster_id']} - {_display_label(row)}",
                 "",
                 f"- Dimensione: {row['size']} ({_percentage(row['size'], total)})",
                 f"- Coerenza: {_format_score(row['coherence_score'])}",
@@ -78,6 +106,32 @@ def write_markdown_report(con: sqlite3.Connection, output: Path, run_id: int | N
         lines.append("")
     output.write_text("\n".join(lines), encoding="utf-8")
     return len(rows)
+
+
+def _resolve_run_id(con: sqlite3.Connection, run_id: int | None) -> int | None:
+    if run_id is not None:
+        return run_id
+    row = con.execute("SELECT id FROM clustering_runs ORDER BY id DESC LIMIT 1").fetchone()
+    return int(row["id"]) if row else None
+
+
+def _cluster_rows(con: sqlite3.Connection, run_id: int) -> list[sqlite3.Row]:
+    return list(
+        con.execute(
+            """
+            SELECT cluster_id, label_auto, label_manual, keywords_json,
+                   representative_email_ids_json, size, coherence_score
+            FROM clusters
+            WHERE clustering_run_id = ?
+            ORDER BY cluster_id
+            """,
+            (run_id,),
+        )
+    )
+
+
+def _display_label(row: sqlite3.Row) -> str:
+    return row["label_manual"] or row["label_auto"] or f"Cluster {row['cluster_id']}"
 
 
 def _representative_rows(con: sqlite3.Connection, email_ids: list[int]) -> list[sqlite3.Row]:

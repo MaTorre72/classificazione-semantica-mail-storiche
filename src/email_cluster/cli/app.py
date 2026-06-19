@@ -12,7 +12,7 @@ from email_cluster.cleaning.normalizer import build_clean_text
 from email_cluster.clustering.engine import run_clustering, summarize_clusters
 from email_cluster.config import load_config
 from email_cluster.embeddings.engine import EmbeddingEngine
-from email_cluster.export.writers import export_emails, write_markdown_report
+from email_cluster.export.writers import export_cluster_review, export_emails, write_markdown_report
 from email_cluster.ingestion.scanner import file_sha256, scan_local_folder
 from email_cluster.parsing.email_parser import parse_eml, parse_mbox
 from email_cluster.storage.database import connect, init_db as create_schema
@@ -221,7 +221,7 @@ def list_clusters(db: DbOpt = Path("data/email_cluster.sqlite"), run: int | None
             table.add_column(column)
         for row in con.execute(
             """
-            SELECT cluster_id, size, label_auto, keywords_json, coherence_score
+            SELECT cluster_id, size, label_auto, label_manual, keywords_json, coherence_score
             FROM clusters WHERE clustering_run_id = ? ORDER BY cluster_id
             """,
             (run,),
@@ -229,11 +229,40 @@ def list_clusters(db: DbOpt = Path("data/email_cluster.sqlite"), run: int | None
             table.add_row(
                 str(row["cluster_id"]),
                 str(row["size"]),
-                row["label_auto"] or "",
+                row["label_manual"] or row["label_auto"] or "",
                 row["keywords_json"] or "[]",
                 "" if row["coherence_score"] is None else f"{row['coherence_score']:.3f}",
             )
         console.print(table)
+
+
+@app.command("review-clusters")
+def review_clusters(
+    output: Annotated[Path, typer.Option("--output")] = Path("data/output/cluster_review.csv"),
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    run: Annotated[int | None, typer.Option("--run")] = None,
+) -> None:
+    with connect(db) as con:
+        count = export_cluster_review(con, output, run)
+    console.print(f"Revisione cluster esportata: {output} ({count} cluster)")
+
+
+@app.command("set-label")
+def set_label(
+    cluster_id: Annotated[int, typer.Argument(help="ID cluster.")],
+    label: Annotated[str, typer.Argument(help="Etichetta manuale.")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    run: Annotated[int | None, typer.Option("--run")] = None,
+) -> None:
+    with connect(db) as con:
+        if run is None:
+            row = con.execute("SELECT id FROM clustering_runs ORDER BY id DESC LIMIT 1").fetchone()
+            if not row:
+                raise typer.BadParameter("Nessun clustering run presente.")
+            run = int(row["id"])
+        repo = Repository(con)
+        repo.set_cluster_manual_label(run, cluster_id, label)
+    console.print(f"Etichetta aggiornata: run {run}, cluster {cluster_id} -> {label}")
 
 
 @app.command("status")

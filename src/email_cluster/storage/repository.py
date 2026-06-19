@@ -342,3 +342,15 @@ class Repository:
                 utcnow(),
             ),
         )
+
+    def set_cluster_manual_label(self, run_id: int, cluster_id: int, label: str | None) -> None:
+        cur = self.con.execute(
+            """
+            UPDATE clusters
+            SET label_manual = ?
+            WHERE clustering_run_id = ? AND cluster_id = ?
+            """,
+            (label, run_id, cluster_id),
+        )
+        if cur.rowcount == 0:
+            raise ValueError(f"Cluster {cluster_id} not found in run {run_id}")
