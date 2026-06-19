@@ -32,6 +32,18 @@ email-cluster run-pipeline --source mail --project archivio_storico --db data/em
 email-cluster status --db data/email_cluster.sqlite
 ```
 
+Per aprire una piccola interfaccia grafica locale:
+
+```powershell
+email-cluster-gui
+```
+
+Su Windows puoi anche usare:
+
+```powershell
+.\start_gui.bat
+```
+
 ## Smoke test reale
 
 Sul campione locale `mail/mail_test_01.mbox` sono stati validati:
@@ -82,6 +94,7 @@ email-cluster report --db data/email_cluster.sqlite --output data/output/cluster
 ```text
 src/email_cluster/
   cli/          Comandi Typer
+  gui/          Interfaccia grafica locale Tkinter
   ingestion/    Scansione file locali
   parsing/      Parser EML/MBOX
   cleaning/     Regole euristiche verificabili

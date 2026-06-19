@@ -15,6 +15,16 @@ email-cluster status --db data/email_cluster.sqlite
 
 Usa `--skip-ml` se vuoi fermarti a import, cleaning ed export senza embedding/clustering.
 
+## Interfaccia grafica
+
+```powershell
+email-cluster-gui
+```
+
+La finestra permette di scegliere sorgente, progetto, database e cartella output, poi lanciare i comandi principali senza scriverli a mano. I comandi continuano a girare nella stessa pipeline CLI e il log viene mostrato nella parte bassa della finestra.
+
+Su Windows e' disponibile anche `start_gui.bat` nella cartella del progetto.
+
 ## Importare una cartella
 
 ```powershell

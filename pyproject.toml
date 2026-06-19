@@ -32,6 +32,7 @@ dev = [
 
 [project.scripts]
 email-cluster = "email_cluster.cli.app:app"
+email-cluster-gui = "email_cluster.gui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -43,4 +44,3 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-
