@@ -126,7 +126,8 @@ def clean(
         repo = Repository(con)
         project_id = repo.project_id(project)
         for row in repo.emails_needing_cleaning(project_id, cfg.cleaning.version):
-            text = row["body_extracted_text"] or row["body_plain"] or ""
+            text_parts = [row["subject"] or "", row["body_extracted_text"] or row["body_plain"] or ""]
+            text = "\n\n".join(part for part in text_parts if part.strip())
             cleaned = build_clean_text(int(row["id"]), text, cfg.cleaning.version)
             repo.insert_clean_text(cleaned)
             count += 1
