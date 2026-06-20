@@ -42,3 +42,17 @@ class ClusterActionSuggestion(BaseModel):
     merge_candidates: list[int] = Field(default_factory=list)
     split_candidates: list[str] = Field(default_factory=list)
     confidence: float = 0.0
+
+
+class OperationalContextSuggestion(BaseModel):
+    context_name: str
+    context_type: str = "tema_tecnico"
+    client_or_entity: str = ""
+    technical_domain: str = ""
+    practice_or_topic: str = ""
+    summary: str = ""
+    why_grouped: str = ""
+    emails_that_do_not_fit: list[int] = Field(default_factory=list)
+    suggested_user_action: str = "approva"
+    suggested_label: str = ""
+    confidence: float = 0.0

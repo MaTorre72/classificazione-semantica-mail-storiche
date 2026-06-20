@@ -338,6 +338,37 @@ CREATE TABLE IF NOT EXISTS review_suggestions (
     status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL,
     FOREIGN KEY(review_session_id) REFERENCES review_sessions(id)
 );
+
+CREATE TABLE IF NOT EXISTS operational_contexts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL,
+    source_clustering_run_id INTEGER, source_cluster_id INTEGER,
+    name TEXT NOT NULL, description TEXT, context_type TEXT NOT NULL,
+    macro_category TEXT NOT NULL, client_or_entity TEXT, technical_domain TEXT,
+    practice_or_topic TEXT, why_grouped TEXT, suggested_user_action TEXT,
+    source TEXT NOT NULL DEFAULT 'auto', confidence REAL NOT NULL DEFAULT 0,
+    review_status TEXT NOT NULL DEFAULT 'pending', review_priority REAL NOT NULL DEFAULT 0,
+    llm_used INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(project_id, source_clustering_run_id, source_cluster_id, macro_category),
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+CREATE TABLE IF NOT EXISTS email_context_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, email_id INTEGER NOT NULL,
+    operational_context_id INTEGER NOT NULL, macro_category TEXT NOT NULL,
+    assignment_source TEXT NOT NULL DEFAULT 'auto', confidence REAL NOT NULL DEFAULT 0,
+    review_status TEXT NOT NULL DEFAULT 'pending', reason TEXT,
+    is_suspicious INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(email_id, operational_context_id), FOREIGN KEY(email_id) REFERENCES emails(id),
+    FOREIGN KEY(operational_context_id) REFERENCES operational_contexts(id)
+);
+
+CREATE TABLE IF NOT EXISTS context_review_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, operational_context_id INTEGER NOT NULL,
+    email_id INTEGER, action TEXT NOT NULL, old_value_json TEXT, new_value_json TEXT,
+    notes TEXT, created_at TEXT NOT NULL,
+    FOREIGN KEY(operational_context_id) REFERENCES operational_contexts(id),
+    FOREIGN KEY(email_id) REFERENCES emails(id)
+);
 """
 
 
@@ -350,7 +381,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
-    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 3):
+    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 4):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(db_path, db_path.with_suffix(db_path.suffix + f".backup-{timestamp}"))
     with connect(db_path) as con:
@@ -379,7 +410,7 @@ def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
             "recurring_subjects_json": "TEXT", "recurring_senders_json": "TEXT",
             "mean_probability": "REAL", "confidence_label": "REAL",
         })
-        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '3')")
+        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '4')")
 
 
 def _migrate_clean_texts(con: sqlite3.Connection) -> None:

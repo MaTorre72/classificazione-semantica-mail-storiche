@@ -45,7 +45,7 @@ def test_v2_schema_and_incremental_source_state(tmp_path) -> None:
         assert not repo.source_file_is_current(project_id, "inbox.mbox", "changed")
         version = con.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
         context_columns = {row["name"] for row in con.execute("PRAGMA table_info(semantic_contexts)")}
-    assert version == "3"
+    assert version == "4"
     assert {"context_strategy", "semantic_text_for_embedding", "llm_used"} <= context_columns
 
 
@@ -55,3 +55,4 @@ def test_v3_review_tables_exist(tmp_path) -> None:
     with connect(db) as con:
         tables = {row["name"] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert {"review_sessions", "cluster_reviews", "email_reviews", "taxonomy_labels", "label_examples", "label_rules", "llm_cache"} <= tables
+    assert {"operational_contexts", "email_context_assignments", "context_review_events"} <= tables

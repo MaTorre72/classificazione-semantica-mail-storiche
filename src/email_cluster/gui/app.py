@@ -33,6 +33,7 @@ class EmailClusterGui:
         self.cluster_var = StringVar(value="0")
         self.label_var = StringVar(value="")
         self.session_var = StringVar(value="")
+        self.context_var = StringVar(value="")
         self.query_var = StringVar(value="")
         self.skip_ml_var = BooleanVar(value=False)
 
@@ -55,13 +56,16 @@ class EmailClusterGui:
         notebook.grid(row=4, column=0, columnspan=3, sticky="nsew", pady=(12, 8))
 
         pipeline_tab = ttk.Frame(notebook, padding=10)
+        context_tab = ttk.Frame(notebook, padding=10)
         review_tab = ttk.Frame(notebook, padding=10)
         tools_tab = ttk.Frame(notebook, padding=10)
         notebook.add(pipeline_tab, text="Pipeline")
-        notebook.add(review_tab, text="Cluster")
+        notebook.add(context_tab, text="Contesti")
+        notebook.add(review_tab, text="Avanzato")
         notebook.add(tools_tab, text="Strumenti")
 
         self._build_pipeline_tab(pipeline_tab)
+        self._build_context_tab(context_tab)
         self._build_review_tab(review_tab)
         self._build_tools_tab(tools_tab)
 
@@ -131,6 +135,29 @@ class EmailClusterGui:
         ttk.Button(parent, text="Proposte LLM cluster", command=self._run_llm_labels).grid(
             row=6, column=0, sticky="ew", pady=4
         )
+
+    def _build_context_tab(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(1, weight=1)
+        ttk.Label(parent, text="Contesto operativo").grid(row=0, column=0, sticky="w")
+        ttk.Entry(parent, textvariable=self.context_var, width=12).grid(row=0, column=1, sticky="w")
+        buttons = [
+            ("Apri workbench", self._run_workbench),
+            ("Prossimo contesto", self._run_next_context),
+            ("Apri contesto", self._run_context),
+            ("Approva", self._run_approve_context),
+            ("Rinomina", self._run_rename_context),
+            ("Dividi", self._run_split_context),
+            ("Non professionale", self._run_nonprofessional_context),
+            ("Chiedi al LLM", self._run_context_llm),
+            ("Esporta", self._run_context_export),
+        ]
+        for index, (label, command) in enumerate(buttons):
+            ttk.Button(parent, text=label, command=command).grid(
+                row=1 + index // 3, column=index % 3, sticky="ew", padx=4, pady=4
+            )
+            parent.columnconfigure(index % 3, weight=1)
+        ttk.Label(parent, text="Nuovo nome").grid(row=5, column=0, sticky="w", pady=(12, 4))
+        ttk.Entry(parent, textvariable=self.label_var).grid(row=5, column=1, columnspan=2, sticky="ew")
 
     def _build_tools_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
@@ -299,6 +326,53 @@ class EmailClusterGui:
 
     def _run_llm_labels(self) -> None:
         self._run_command("LLM cluster labels", ["llm-label-clusters", "--project", self.project, "--run", "latest", "--db", self.db, "--config", self.config])
+
+    def _context_id(self) -> str | None:
+        value = self.context_var.get().strip()
+        if not value:
+            messagebox.showwarning("Contesto mancante", "Inserisci l'ID del contesto oppure usa Prossimo contesto.")
+            return None
+        return value
+
+    def _run_workbench(self) -> None:
+        self._run_command("Workbench", ["workbench", "--project", self.project, "--db", self.db, "--config", self.config])
+
+    def _run_next_context(self) -> None:
+        self._run_command("Prossimo contesto", ["review", "--next", "--project", self.project, "--db", self.db])
+
+    def _run_context(self) -> None:
+        context_id = self._context_id()
+        if context_id:
+            self._run_command("Contesto", ["review", "--context", context_id, "--db", self.db])
+
+    def _run_approve_context(self) -> None:
+        context_id = self._context_id()
+        if context_id:
+            self._run_command("Approva contesto", ["approve-context", "--context", context_id, "--db", self.db])
+
+    def _run_rename_context(self) -> None:
+        context_id = self._context_id()
+        name = self.label_var.get().strip()
+        if context_id and name:
+            self._run_command("Rinomina contesto", ["rename-context", "--context", context_id, "--name", name, "--db", self.db])
+
+    def _run_split_context(self) -> None:
+        context_id = self._context_id()
+        if context_id:
+            self._run_command("Dividi contesto", ["split-context", "--context", context_id, "--db", self.db])
+
+    def _run_nonprofessional_context(self) -> None:
+        context_id = self._context_id()
+        if context_id:
+            self._run_command("Non professionale", ["mark-context-nonprofessional", "--context", context_id, "--db", self.db])
+
+    def _run_context_llm(self) -> None:
+        context_id = self._context_id()
+        if context_id:
+            self._run_command("LLM contesto", ["ask-context-llm", "--context", context_id, "--db", self.db, "--config", self.config])
+
+    def _run_context_export(self) -> None:
+        self._run_command("Esporta contesti", ["export-final", "--project", self.project, "--output", str(Path(self.export_dir) / "context_report.html"), "--db", self.db])
 
     def _run_set_label(self) -> None:
         cluster_id = self.cluster_var.get().strip()

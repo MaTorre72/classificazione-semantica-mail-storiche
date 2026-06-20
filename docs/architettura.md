@@ -40,12 +40,19 @@ Lo schema e' in `src/email_cluster/storage/database.py`. Le tabelle principali s
 - `review_sessions`, `cluster_reviews`, `email_reviews`
 - `taxonomy_labels`, `label_examples`, `label_rules`
 - `llm_runs`, `llm_cache`, `llm_email_suggestions`, `llm_cluster_suggestions`
+- `operational_contexts`, `email_context_assignments`, `context_review_events`
 
 ## Revisione V3
 
 La run automatica è immutabile. Una `review_session` sovrappone decisioni umane e proposte LLM,
 costruendo una classificazione finale esportabile. Tassonomia, esempi e regole alimentano suggerimenti
 progressivi senza training pesante.
+
+## Contesti V3.1
+
+Le macro categorie vengono assegnate prima del raggruppamento. Il cluster è solo una sorgente per
+costruire `operational_contexts`; assegnazioni e correzioni umane sono tracciate separatamente. Il
+report finale legge i contesti, non i `cluster_id`.
 - `errors`
 
 ## Estensioni consigliate
