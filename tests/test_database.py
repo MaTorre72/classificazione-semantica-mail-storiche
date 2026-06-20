@@ -32,3 +32,18 @@ def test_clustering_diagnostic_columns_exist(tmp_path) -> None:
         cluster_columns = {row["name"] for row in con.execute("PRAGMA table_info(clusters)")}
     assert {"profile_name", "noise_ratio", "warnings_json", "excluded_before_clustering"} <= run_columns
     assert {"recurring_subjects_json", "mean_probability", "confidence_label"} <= cluster_columns
+
+
+def test_v2_schema_and_incremental_source_state(tmp_path) -> None:
+    db = tmp_path / "v2.sqlite"
+    init_db(db)
+    with connect(db) as con:
+        repo = Repository(con)
+        project_id = repo.get_or_create_project("mail")
+        repo.upsert_source_file(project_id, "inbox.mbox", "mbox", "abc", "ok", file_size=10)
+        assert repo.source_file_is_current(project_id, "inbox.mbox", "abc")
+        assert not repo.source_file_is_current(project_id, "inbox.mbox", "changed")
+        version = con.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
+        context_columns = {row["name"] for row in con.execute("PRAGMA table_info(semantic_contexts)")}
+    assert version == "2"
+    assert {"context_strategy", "semantic_text_for_embedding", "llm_used"} <= context_columns

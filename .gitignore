@@ -10,6 +10,7 @@ build/
 data/input/*
 data/output/*
 data/*.sqlite
+data/*.sqlite.backup-*
 data/pytest-*/
 mail/
 !data/input/.gitkeep

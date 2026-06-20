@@ -15,6 +15,9 @@ DISCLAIMER_STARTS = [
     "ai sensi del regolamento", "informativa privacy", "this message and any attachments",
     "the information contained in this message", "this email is intended only",
     "if you are not the intended recipient",
+    "this e-mail and any attachments", "this email and any attachments",
+    "the contents of this message", "any unauthorised use", "any unauthorized use",
+    "please consider the environment", "think before print", "think before you print",
 ]
 
 SIGNATURE_STARTS = [

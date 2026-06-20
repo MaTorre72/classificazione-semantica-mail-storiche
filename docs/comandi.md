@@ -1,5 +1,62 @@
 # Comandi CLI
 
+## Flusso V2 consigliato
+
+Primo avvio e successivi aggiornamenti usano lo stesso comando:
+
+```powershell
+email-cluster run --input mail --project archivio_storico --db data/email_cluster.sqlite --profile balanced
+```
+
+Quando aggiungi nuovi MBOX alla cartella, `run` salta i file invariati e importa solo quelli nuovi o
+modificati. `import-status` mostra conteggi ed errori per sorgente.
+
+```powershell
+email-cluster import-status --project archivio_storico --db data/email_cluster.sqlite
+email-cluster status --project archivio_storico --input mail --db data/email_cluster.sqlite
+email-cluster doctor --input mail --db data/email_cluster.sqlite
+```
+
+## Rigenerare singoli stadi
+
+```powershell
+email-cluster reset-stage --stage cleaning --project archivio_storico --db data/email_cluster.sqlite
+email-cluster reset-stage --stage context --project archivio_storico --db data/email_cluster.sqlite
+email-cluster reset-stage --stage embedding --project archivio_storico --db data/email_cluster.sqlite
+email-cluster reset-stage --stage clustering --project archivio_storico --db data/email_cluster.sqlite
+```
+
+Dopo il reset rilancia `run`. La modalità embedding predefinita è `semantic`; la compatibilità resta:
+
+```powershell
+email-cluster embed --mode semantic --project archivio_storico --db data/email_cluster.sqlite
+email-cluster embed --mode legacy --project archivio_storico --db data/email_cluster.sqlite
+```
+
+## Diagnosi e spiegazioni
+
+```powershell
+email-cluster context-report --project archivio_storico --db data/email_cluster.sqlite
+email-cluster attachment-report --project archivio_storico --db data/email_cluster.sqlite
+email-cluster clustering-report --latest --db data/email_cluster.sqlite
+email-cluster explain-email --id 42 --db data/email_cluster.sqlite
+email-cluster explain-cluster --id 3 --db data/email_cluster.sqlite
+```
+
+`clean_text` è il messaggio corrente normalizzato; `semantic_text_for_embedding` è il contesto
+operativo ricostruito. Un'email esclusa non entra nell'ML; il rumore HDBSCAN è invece un'email ammessa
+ma non assegnata a un cluster denso.
+
+## Modalità opzionali
+
+- Senza LLM: configurazione predefinita, sintesi deterministiche locali.
+- Con LLM: installa `.[local-llm]`, indica un GGUF locale e abilita `local_llm.enabled`.
+- Con allegati: installa `.[attachments]`; nuovi import estraggono PDF testuali, DOCX, TXT, CSV e XLSX.
+- OCR: predisposto ma disabilitato; non viene installato automaticamente.
+
+In caso di errore esegui `doctor`, controlla `import-status`, poi i report cleaning/context/allegati.
+Un modello embedding deve essere già nella cache locale quando la rete non è disponibile.
+
 ## Creare database
 
 ```powershell

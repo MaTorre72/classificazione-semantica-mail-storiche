@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import importlib.util
+import platform
 from itertools import islice, product
 from typing import Annotated
 
@@ -11,6 +13,10 @@ from rich.console import Console
 from rich.table import Table
 
 from email_cluster.cleaning.normalizer import build_clean_text
+from email_cluster.attachments.summarizer import summarize_attachment
+from email_cluster.attachments.classifier import classify_attachment
+from email_cluster.context.builder import build_context
+from email_cluster.llm.local import enrich_locally
 from email_cluster.clustering.engine import run_clustering, summarize_clusters
 from email_cluster.clustering.diagnostics import calculate_metrics, diagnostic_warnings
 from email_cluster.config import load_config
@@ -51,48 +57,79 @@ def import_emails(
     source: Annotated[Path, typer.Option("--source", exists=True, help="Cartella o file email.")],
     project: Annotated[str, typer.Option("--project", help="Nome progetto.")],
     db: DbOpt = Path("data/email_cluster.sqlite"),
+    config: ConfigOpt = Path("config/default.yaml"),
 ) -> None:
     create_schema(db)
+    cfg = load_config(config)
     imported = 0
     duplicates = 0
+    unchanged_files = 0
     errors = 0
     with connect(db) as con:
         repo = Repository(con)
         project_id = repo.get_or_create_project(project)
         for candidate in scan_local_folder(source):
+            candidate_path = str(candidate.path.resolve())
+            file_hash = file_sha256(candidate.path)
+            if repo.source_file_is_current(project_id, candidate_path, file_hash):
+                unchanged_files += 1
+                continue
+            stat = candidate.path.stat()
             source_file_id = repo.upsert_source_file(
                 project_id,
-                str(candidate.path),
+                candidate_path,
                 candidate.file_type,
-                file_sha256(candidate.path),
+                file_hash,
                 "importing",
+                file_size=stat.st_size,
+                modified_at=str(stat.st_mtime_ns),
             )
+            found_for_file = 0
+            imported_for_file = 0
+            errors_for_file = 0
             try:
                 parsed_messages = (
-                    [parse_eml(candidate.path)]
+                    [parse_eml(
+                        candidate.path,
+                        extract_attachments=cfg.attachments.enabled and cfg.attachments.extract_text,
+                        max_attachment_size_mb=cfg.attachments.max_file_size_mb,
+                    )]
                     if candidate.file_type == "eml"
-                    else parse_mbox(candidate.path)
+                    else parse_mbox(
+                        candidate.path,
+                        extract_attachments=cfg.attachments.enabled and cfg.attachments.extract_text,
+                        max_attachment_size_mb=cfg.attachments.max_file_size_mb,
+                    )
                 )
                 for parsed in parsed_messages:
+                    found_for_file += 1
                     try:
                         email_id = repo.insert_email(project_id, source_file_id, parsed)
                         if email_id is None:
                             duplicates += 1
                         else:
                             imported += 1
+                            imported_for_file += 1
                     except Exception as exc:  # noqa: BLE001 - isolation per malformed message
                         errors += 1
+                        errors_for_file += 1
                         repo.record_error("parsing", exc, project_id, source_file_id)
                 repo.upsert_source_file(
-                    project_id, str(candidate.path), candidate.file_type, file_sha256(candidate.path), "ok"
+                    project_id, candidate_path, candidate.file_type, file_hash, "ok",
+                    file_size=stat.st_size, modified_at=str(stat.st_mtime_ns),
+                    emails_found=found_for_file, emails_imported=imported_for_file,
+                    errors_count=errors_for_file,
                 )
             except Exception as exc:  # noqa: BLE001 - isolation per source file
                 errors += 1
                 repo.record_error("ingestion", exc, project_id, source_file_id)
                 repo.upsert_source_file(
-                    project_id, str(candidate.path), candidate.file_type, file_sha256(candidate.path), "error"
+                    project_id, candidate_path, candidate.file_type, file_hash, "error",
+                    file_size=stat.st_size, modified_at=str(stat.st_mtime_ns),
+                    emails_found=found_for_file, emails_imported=imported_for_file,
+                    errors_count=errors_for_file + 1,
                 )
-    console.print(f"Importate: {imported} | Duplicate: {duplicates} | Errori: {errors}")
+    console.print(f"Importate: {imported} | Email duplicate: {duplicates} | File invariati: {unchanged_files} | Errori: {errors}")
 
 
 @app.command("run-pipeline")
@@ -107,7 +144,7 @@ def run_pipeline(
     console.rule("Init DB")
     init_db(db)
     console.rule("Import")
-    import_emails(source=source, project=project, db=db)
+    import_emails(source=source, project=project, db=db, config=config)
     console.rule("Cleaning")
     clean(project=project, db=db, config=config)
     if not skip_ml:
@@ -120,6 +157,32 @@ def run_pipeline(
     console.rule("Export")
     export_cmd(output=export_dir / "emails.csv", fmt="csv", db=db)
     export_cmd(output=export_dir / "emails.json", fmt="json", db=db)
+
+
+@app.command("run")
+def run_v2(
+    input_path: Annotated[Path, typer.Option("--input", exists=True)] = Path("data/input"),
+    project: Annotated[str, typer.Option("--project")] = "mail-storiche",
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    config: ConfigOpt = Path("config/default.yaml"),
+    profile: Annotated[str, typer.Option("--profile")] = "balanced",
+    skip_ml: Annotated[bool, typer.Option("--skip-ml")] = False,
+) -> None:
+    console.rule("Import incrementale")
+    import_emails(source=input_path, project=project, db=db, config=config)
+    console.rule("Cleaning")
+    clean(project=project, db=db, config=config)
+    console.rule("Contesto semantico")
+    prepare_context(project=project, db=db, config=config)
+    if not skip_ml:
+        console.rule("Embedding semantici")
+        embed(project=project, db=db, config=config, limit=None, mode="semantic")
+        console.rule("Clustering")
+        cluster(project=project, db=db, config=config, profile=profile)
+        console.rule("Report")
+        report(output=Path("data/output/cluster_report.md"), db=db, run=None)
+    console.rule("Stato")
+    status(db=db, project=project, input_path=input_path)
 
 
 @app.command("clean")
@@ -145,6 +208,57 @@ def clean(
             repo.insert_clean_text(cleaned)
             count += 1
     console.print(f"Testi puliti creati: {count}")
+
+
+@app.command("prepare-context")
+def prepare_context(
+    project: Annotated[str, typer.Option("--project")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    config: ConfigOpt = Path("config/default.yaml"),
+) -> None:
+    create_schema(db)
+    cfg = load_config(config)
+    created = 0
+    with connect(db) as con:
+        repo = Repository(con)
+        project_id = repo.project_id(project)
+        for row in repo.emails_needing_context(project_id, cfg.semantic_preparation.version):
+            attachment_parts: list[str] = []
+            for attachment in repo.attachment_rows(int(row["id"])):
+                attachment_type = attachment["attachment_type"]
+                keywords = json.loads(attachment["attachment_keywords_json"] or "[]")
+                if not attachment_type:
+                    attachment_type, keywords = classify_attachment(attachment["filename"])
+                    con.execute(
+                        "UPDATE attachments SET attachment_type=?, attachment_keywords_json=? WHERE id=?",
+                        (attachment_type, json.dumps(keywords, ensure_ascii=False), attachment["id"]),
+                    )
+                if attachment_type == "altro" and not attachment["extracted_text"]:
+                    continue
+                attachment_parts.append(summarize_attachment(
+                    attachment["filename"], attachment_type or "altro", keywords,
+                    attachment["extracted_text"], cfg.semantic_preparation.max_attachment_summary_chars,
+                ))
+            attachment_summary = "\n".join(attachment_parts)[: cfg.semantic_preparation.max_attachment_summary_chars]
+            llm_input = "\n\n".join(filter(None, [
+                row["subject_clean"] or row["subject"] or "",
+                row["current_message_text"] or row["body_current_message_clean"] or "",
+                row["quoted_thread_text"] or "",
+                attachment_summary,
+            ]))
+            enrichment, llm_used, llm_error = enrich_locally(llm_input, cfg.local_llm)
+            context = build_context(
+                int(row["id"]), row["subject_clean"] or row["subject"] or "",
+                row["current_message_text"] or row["body_current_message_clean"] or "",
+                row["quoted_thread_text"] or "", row["message_type"], attachment_summary,
+                cfg.semantic_preparation, enrichment,
+            )
+            context.llm_used = llm_used
+            context.llm_model = str(cfg.local_llm.model_path) if llm_used else None
+            context.llm_parameters = {"backend": cfg.local_llm.backend, "error": llm_error}
+            repo.insert_semantic_context(context)
+            created += 1
+    console.print(f"Contesti semantici creati: {created}")
 
 
 @app.command("clean-preview")
@@ -222,12 +336,159 @@ def cleaning_report(
         console.print(table)
 
 
+@app.command("context-report")
+def context_report(project: Annotated[str, typer.Option("--project")], db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+    create_schema(db)
+    with connect(db) as con:
+        pid = Repository(con).project_id(project)
+        rows = list(con.execute("""
+            SELECT sc.* FROM semantic_contexts sc JOIN emails e ON e.id=sc.email_id
+            WHERE e.project_id=? AND sc.id=(SELECT max(sc2.id) FROM semantic_contexts sc2 WHERE sc2.email_id=sc.email_id)
+        """, (pid,)))
+    if not rows:
+        console.print("Nessun contesto semantico. Esegui prepare-context.")
+        return
+    types: dict[str, int] = {}
+    strategies: dict[str, int] = {}
+    reasons: dict[str, int] = {}
+    for row in rows:
+        types[row["message_type"]] = types.get(row["message_type"], 0) + 1
+        strategies[row["context_strategy"]] = strategies.get(row["context_strategy"], 0) + 1
+        if row["exclusion_reason"]:
+            reasons[row["exclusion_reason"]] = reasons.get(row["exclusion_reason"], 0) + 1
+    console.print(f"Totale: {len(rows)} | escluse: {sum(r['excluded_from_main_clustering'] for r in rows)} | LLM: {sum(r['llm_used'] for r in rows)}")
+    console.print("Tipi: " + ", ".join(f"{k}={v}" for k, v in sorted(types.items())))
+    console.print("Strategie: " + ", ".join(f"{k}={v}" for k, v in sorted(strategies.items())))
+    console.print("Esclusioni: " + ", ".join(f"{k}={v}" for k, v in sorted(reasons.items())))
+    console.print(f"Lunghezza media semantic_text: {sum(len(r['semantic_text_for_embedding']) for r in rows)/len(rows):.1f}")
+    table = Table(title="Contesti piu corti e piu lunghi")
+    table.add_column("id")
+    table.add_column("strategia")
+    table.add_column("caratteri")
+    extremes = sorted(rows, key=lambda r: len(r["semantic_text_for_embedding"]))[:20]
+    extremes += sorted(rows, key=lambda r: len(r["semantic_text_for_embedding"]), reverse=True)[:20]
+    for row in extremes:
+        table.add_row(str(row["email_id"]), row["context_strategy"], str(len(row["semantic_text_for_embedding"])))
+    console.print(table)
+
+
+@app.command("attachment-report")
+def attachment_report(project: Annotated[str, typer.Option("--project")], db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+    create_schema(db)
+    with connect(db) as con:
+        pid = Repository(con).project_id(project)
+        rows = list(con.execute("""SELECT a.* FROM attachments a JOIN emails e ON e.id=a.email_id WHERE e.project_id=?""", (pid,)))
+        dominant = con.execute("""SELECT count(*) FROM semantic_contexts sc JOIN emails e ON e.id=sc.email_id WHERE e.project_id=? AND sc.context_strategy='attachment_dominant'""", (pid,)).fetchone()[0]
+    types: dict[str, int] = {}
+    statuses: dict[str, int] = {}
+    formats: dict[str, int] = {}
+    for row in rows:
+        types[row["attachment_type"] or "altro"] = types.get(row["attachment_type"] or "altro", 0) + 1
+        statuses[row["extraction_status"] or "unknown"] = statuses.get(row["extraction_status"] or "unknown", 0) + 1
+        suffix = Path(row["filename"] or "").suffix.lower() or "senza_estensione"
+        formats[suffix] = formats.get(suffix, 0) + 1
+    console.print(f"Allegati: {len(rows)} | email attachment_dominant: {dominant}")
+    console.print("Tipi: " + ", ".join(f"{k}={v}" for k, v in sorted(types.items())))
+    console.print("Estrazione: " + ", ".join(f"{k}={v}" for k, v in sorted(statuses.items())))
+    console.print("Formati: " + ", ".join(f"{k}={v}" for k, v in sorted(formats.items(), key=lambda item: item[1], reverse=True)[:15]))
+
+
+@app.command("explain-email")
+def explain_email(email_id: Annotated[int, typer.Option("--id")], db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+    create_schema(db)
+    with connect(db) as con:
+        row = con.execute("""
+            SELECT e.*, c.subject_clean, c.current_message_text, c.quoted_thread_text,
+                   c.signature_text, c.disclaimer_text, sc.context_strategy,
+                   sc.thread_context_summary, sc.attachment_summary, sc.semantic_summary,
+                   sc.semantic_text_for_embedding, sc.message_type, sc.excluded_from_main_clustering,
+                   sc.exclusion_reason
+            FROM emails e
+            LEFT JOIN clean_texts c ON c.id=(SELECT max(c2.id) FROM clean_texts c2 WHERE c2.email_id=e.id)
+            LEFT JOIN semantic_contexts sc ON sc.id=(SELECT max(sc2.id) FROM semantic_contexts sc2 WHERE sc2.email_id=e.id)
+            WHERE e.id=?
+        """, (email_id,)).fetchone()
+        if not row:
+            raise typer.BadParameter(f"Email non trovata: {email_id}")
+        fields = ("subject", "sender", "sent_at", "body_extracted_text", "subject_clean", "current_message_text", "quoted_thread_text", "thread_context_summary", "attachment_summary", "semantic_summary", "semantic_text_for_embedding", "message_type", "context_strategy", "excluded_from_main_clustering", "exclusion_reason")
+        for field in fields:
+            console.rule(field)
+            console.print(row[field] if row[field] not in (None, "") else "[dim](vuoto)[/dim]")
+        attachments = list(con.execute("SELECT filename, attachment_type, extraction_status FROM attachments WHERE email_id=?", (email_id,)))
+        console.rule("allegati")
+        console.print([dict(item) for item in attachments])
+        assignment = con.execute("""SELECT ec.cluster_id, ec.probability, ec.clustering_run_id FROM email_clusters ec WHERE ec.email_id=? ORDER BY ec.id DESC LIMIT 1""", (email_id,)).fetchone()
+        console.rule("cluster")
+        console.print(dict(assignment) if assignment else "[dim](non assegnata)[/dim]")
+
+
+@app.command("explain-cluster")
+def explain_cluster(cluster_id: Annotated[int, typer.Option("--id")], db: DbOpt = Path("data/email_cluster.sqlite"), run: Annotated[int | None, typer.Option("--run")] = None) -> None:
+    create_schema(db)
+    with connect(db) as con:
+        if run is None:
+            latest = con.execute("SELECT max(id) id FROM clustering_runs").fetchone()
+            run = int(latest["id"]) if latest and latest["id"] else None
+        row = con.execute("SELECT * FROM clusters WHERE clustering_run_id=? AND cluster_id=?", (run, cluster_id)).fetchone()
+        if not row:
+            raise typer.BadParameter("Cluster non trovato")
+        console.print(f"Cluster {cluster_id} | size {row['size']} | label {row['label_manual'] or row['label_auto']}")
+        console.print("Keyword: " + ", ".join(json.loads(row["keywords_json"] or "[]")))
+        console.print("Domini: " + ", ".join(json.loads(row["recurring_senders_json"] or "[]")))
+        console.print("Rappresentanti: " + row["representative_email_ids_json"])
+        message_types = con.execute("""
+            SELECT sc.message_type, count(*) n FROM email_clusters ec
+            JOIN semantic_contexts sc ON sc.email_id=ec.email_id
+            WHERE ec.clustering_run_id=? AND ec.cluster_id=?
+              AND sc.id=(SELECT max(sc2.id) FROM semantic_contexts sc2 WHERE sc2.email_id=sc.email_id)
+            GROUP BY sc.message_type ORDER BY n DESC
+        """, (run, cluster_id)).fetchall()
+        attachment_types = con.execute("""
+            SELECT a.attachment_type, count(*) n FROM email_clusters ec
+            JOIN attachments a ON a.email_id=ec.email_id
+            WHERE ec.clustering_run_id=? AND ec.cluster_id=?
+            GROUP BY a.attachment_type ORDER BY n DESC LIMIT 10
+        """, (run, cluster_id)).fetchall()
+        console.print("Tipi messaggio: " + ", ".join(f"{r['message_type']}={r['n']}" for r in message_types))
+        console.print("Tipi allegato: " + ", ".join(f"{r['attachment_type'] or 'altro'}={r['n']}" for r in attachment_types))
+
+
+@app.command("reset-stage")
+def reset_stage(
+    stage: Annotated[str, typer.Option("--stage")], project: Annotated[str, typer.Option("--project")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+) -> None:
+    allowed = {"cleaning", "context", "embedding", "clustering"}
+    if stage not in allowed:
+        raise typer.BadParameter("stage deve essere cleaning, context, embedding o clustering")
+    with connect(db) as con:
+        pid = Repository(con).project_id(project)
+        if stage == "cleaning":
+            con.execute("DELETE FROM semantic_embeddings WHERE email_id IN (SELECT id FROM emails WHERE project_id=?)", (pid,))
+            con.execute("DELETE FROM semantic_contexts WHERE email_id IN (SELECT id FROM emails WHERE project_id=?)", (pid,))
+            con.execute("DELETE FROM embeddings WHERE email_id IN (SELECT id FROM emails WHERE project_id=?)", (pid,))
+            con.execute("DELETE FROM clean_texts WHERE email_id IN (SELECT id FROM emails WHERE project_id=?)", (pid,))
+        elif stage == "context":
+            con.execute("DELETE FROM semantic_embeddings WHERE email_id IN (SELECT id FROM emails WHERE project_id=?)", (pid,))
+            con.execute("DELETE FROM semantic_contexts WHERE email_id IN (SELECT id FROM emails WHERE project_id=?)", (pid,))
+        elif stage == "embedding":
+            con.execute("DELETE FROM semantic_embeddings WHERE email_id IN (SELECT id FROM emails WHERE project_id=?)", (pid,))
+        else:
+            run_ids = [r[0] for r in con.execute("SELECT id FROM clustering_runs WHERE project_id=?", (pid,))]
+            for run_id in run_ids:
+                con.execute("DELETE FROM email_clusters WHERE clustering_run_id=?", (run_id,))
+                con.execute("DELETE FROM clusters WHERE clustering_run_id=?", (run_id,))
+            con.execute("DELETE FROM clustering_runs WHERE project_id=?", (pid,))
+    console.print(f"Stadio azzerato: {stage}")
+
+
 @app.command("embed")
 def embed(
     project: Annotated[str, typer.Option("--project", help="Nome progetto.")],
     db: DbOpt = Path("data/email_cluster.sqlite"),
     config: ConfigOpt = Path("config/default.yaml"),
     limit: Annotated[int | None, typer.Option("--limit", help="Limite batch.")] = None,
+    mode: Annotated[str | None, typer.Option("--mode", help="semantic oppure legacy.")] = None,
 ) -> None:
     create_schema(db)
     cfg = load_config(config)
@@ -245,23 +506,31 @@ def embed(
                 "chunk_overlap_chars": cfg.embedding.chunk_overlap_chars,
             },
         )
-        rows = repo.clean_texts_without_embedding(project_id, model_id, limit)
+        selected_mode = mode or cfg.embedding.mode
+        if selected_mode not in {"semantic", "legacy"}:
+            raise typer.BadParameter("mode deve essere semantic oppure legacy")
+        rows = (
+            repo.semantic_contexts_without_embedding(project_id, model_id, limit)
+            if selected_mode == "semantic"
+            else repo.clean_texts_without_embedding(project_id, model_id, limit)
+        )
         for row in rows:
+            text = row["semantic_text_for_embedding"] if selected_mode == "semantic" else row["semantic_text"]
             vector = engine.embed_email(
-                row["semantic_text"],
+                text,
                 cfg.embedding.chunk_size_chars,
                 cfg.embedding.chunk_overlap_chars,
             )
-            repo.insert_embedding(
-                int(row["email_id"]),
-                int(row["id"]),
-                model_id,
-                vector,
-                f"chars_{cfg.embedding.chunk_size_chars}_overlap_{cfg.embedding.chunk_overlap_chars}",
-                "weighted_mean",
-            )
+            if selected_mode == "semantic":
+                repo.insert_semantic_embedding(int(row["email_id"]), int(row["id"]), model_id, vector)
+            else:
+                repo.insert_embedding(
+                    int(row["email_id"]), int(row["id"]), model_id, vector,
+                    f"chars_{cfg.embedding.chunk_size_chars}_overlap_{cfg.embedding.chunk_overlap_chars}",
+                    "weighted_mean",
+                )
             count += 1
-    console.print(f"Embedding generati: {count}")
+    console.print(f"Embedding generati ({selected_mode}): {count}")
 
 
 @app.command("cluster")
@@ -285,9 +554,13 @@ def cluster(
 
 
 def _execute_clustering(con, repo, project_id, cfg, profile_name, umap_params, hdbscan_params) -> int:
-    rows = repo.embeddings_for_project(
-        project_id, min_chars=cfg.cleaning.min_semantic_chars,
-        message_types=cfg.clustering.allowed_message_types,
+    rows = (
+        repo.semantic_embeddings_for_project(project_id)
+        if cfg.embedding.mode == "semantic"
+        else repo.embeddings_for_project(
+            project_id, min_chars=cfg.cleaning.min_semantic_chars,
+            message_types=cfg.clustering.allowed_message_types,
+        )
     )
     if not rows:
         raise typer.BadParameter("Nessun embedding idoneo disponibile. Esegui prima embed.")
@@ -318,6 +591,21 @@ def _execute_clustering(con, repo, project_id, cfg, profile_name, umap_params, h
         max_largest=cfg.clustering.max_largest_cluster_ratio_warning,
         min_clusters=cfg.clustering.min_clusters_warning,
     )
+    excluded_types = dict(con.execute("""
+        SELECT sc.message_type, count(*) n FROM semantic_contexts sc
+        JOIN emails e ON e.id=sc.email_id
+        WHERE e.project_id=? AND sc.excluded_from_main_clustering=1
+          AND sc.id=(SELECT max(sc2.id) FROM semantic_contexts sc2 WHERE sc2.email_id=sc.email_id)
+        GROUP BY sc.message_type
+    """, (project_id,)).fetchall())
+    automatic_count = sum(excluded_types.get(kind, 0) for kind in (
+        "auto_generated", "newsletter", "personal_or_commercial_notification",
+    ))
+    if total_project and automatic_count / total_project > 0.20:
+        warnings.append(f"Molte email automatiche o commerciali escluse: {automatic_count / total_project:.0%} del progetto.")
+    short_count = excluded_types.get("short_reply", 0) + excluded_types.get("low_information", 0)
+    if total_project and short_count / total_project > 0.15:
+        warnings.append(f"Molti messaggi brevi o poco informativi: {short_count / total_project:.0%} del progetto.")
     repo.save_clustering_metrics(run_id, metrics, warnings)
     repo.complete_clustering_run(run_id)
     return run_id
@@ -367,9 +655,18 @@ def compare_runs(project: Annotated[str, typer.Option("--project")], db: DbOpt =
 
 
 @app.command("clustering-report")
-def clustering_report(run_id: Annotated[int, typer.Option("--run-id")], db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+def clustering_report(
+    run_id: Annotated[int | None, typer.Option("--run-id")] = None,
+    latest: Annotated[bool, typer.Option("--latest")] = False,
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+) -> None:
     create_schema(db)
     with connect(db) as con:
+        if latest or run_id is None:
+            latest_row = con.execute("SELECT max(id) id FROM clustering_runs").fetchone()
+            run_id = int(latest_row["id"]) if latest_row and latest_row["id"] else None
+        if run_id is None:
+            raise typer.BadParameter("Nessuna run disponibile")
         run = con.execute("SELECT * FROM clustering_runs WHERE id = ?", (run_id,)).fetchone()
         if not run:
             raise typer.BadParameter(f"Run non trovata: {run_id}")
@@ -462,7 +759,12 @@ def set_label(
 
 
 @app.command("status")
-def status(db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+def status(
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    project: Annotated[str | None, typer.Option("--project")] = None,
+    input_path: Annotated[Path | None, typer.Option("--input")] = None,
+) -> None:
+    create_schema(db)
     with connect(db) as con:
         table = Table(title=f"Database {db}")
         table.add_column("tabella")
@@ -475,6 +777,8 @@ def status(db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
             "clean_texts",
             "embedding_models",
             "embeddings",
+            "semantic_contexts",
+            "semantic_embeddings",
             "clustering_runs",
             "email_clusters",
             "clusters",
@@ -483,6 +787,34 @@ def status(db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
             count = con.execute(f"SELECT count(*) FROM {name}").fetchone()[0]
             table.add_row(name, str(count))
         console.print(table)
+        project_row = con.execute(
+            "SELECT id, name FROM projects WHERE name = ?" if project else "SELECT id, name FROM projects ORDER BY id DESC LIMIT 1",
+            (project,) if project else (),
+        ).fetchone()
+        if project_row:
+            pid = int(project_row["id"])
+            counts = con.execute("""
+                SELECT count(*) total,
+                    sum(EXISTS(SELECT 1 FROM clean_texts c WHERE c.email_id=e.id)) cleaned,
+                    sum(EXISTS(SELECT 1 FROM semantic_contexts sc WHERE sc.email_id=e.id)) contextualized
+                FROM emails e WHERE e.project_id=?
+            """, (pid,)).fetchone()
+            latest_context = con.execute("""
+                SELECT count(*) total, sum(excluded_from_main_clustering) excluded
+                FROM semantic_contexts sc WHERE sc.id IN (
+                    SELECT max(sc2.id) FROM semantic_contexts sc2 JOIN emails e2 ON e2.id=sc2.email_id
+                    WHERE e2.project_id=? GROUP BY sc2.email_id
+                )
+            """, (pid,)).fetchone()
+            console.print(
+                f"Progetto: {project_row['name']} | email: {counts['total']} | pulite: {counts['cleaned'] or 0} | "
+                f"contesto: {counts['contextualized'] or 0} | escluse: {latest_context['excluded'] or 0} | "
+                f"clusterizzabili: {(latest_context['total'] or 0) - (latest_context['excluded'] or 0)}"
+            )
+        if input_path and input_path.exists():
+            candidates = scan_local_folder(input_path)
+            known = {str(Path(row["path"]).resolve()) for row in con.execute("SELECT path FROM source_files")}
+            console.print(f"Input: {input_path} | file trovati: {len(candidates)} | nuovi: {sum(str(c.path.resolve()) not in known for c in candidates)}")
 
         latest_run = con.execute(
             "SELECT id, status, completed_at FROM clustering_runs ORDER BY id DESC LIMIT 1"
@@ -500,6 +832,51 @@ def status(db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
                 f"Ultimo clustering run: {latest_run['id']} | "
                 f"stato: {latest_run['status']} | email: {clustered} | rumore: {noise}"
             )
+
+
+@app.command("import-status")
+def import_status(project: Annotated[str, typer.Option("--project")], db: DbOpt = Path("data/email_cluster.sqlite")) -> None:
+    create_schema(db)
+    with connect(db) as con:
+        pid = Repository(con).project_id(project)
+        table = Table(title="Stato import")
+        for column in ("file", "tipo", "dimensione", "trovate", "importate", "errori", "stato"):
+            table.add_column(column)
+        for row in con.execute("SELECT * FROM source_files WHERE project_id=? ORDER BY path", (pid,)):
+            table.add_row(row["path"], row["file_type"], str(row["file_size"] or 0), str(row["emails_found"] or 0), str(row["emails_imported"] or 0), str(row["errors_count"] or 0), row["status"])
+        console.print(table)
+
+
+@app.command("doctor")
+def doctor(
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    input_path: Annotated[Path, typer.Option("--input")] = Path("data/input"),
+    config: ConfigOpt = Path("config/default.yaml"),
+) -> None:
+    cfg = load_config(config)
+    checks = [
+        ("Python", platform.python_version(), True),
+        ("Database", str(db), db.exists()),
+        ("Input", str(input_path), input_path.exists() and input_path.is_dir()),
+        ("Schema V2", "schema_meta", False),
+        ("ML", "sentence_transformers/umap/hdbscan", all(importlib.util.find_spec(x) for x in ("sentence_transformers", "umap", "hdbscan"))),
+        ("PDF", "pypdf opzionale", importlib.util.find_spec("pypdf") is not None),
+        ("DOCX", "python-docx opzionale", importlib.util.find_spec("docx") is not None),
+        ("XLSX", "openpyxl opzionale", importlib.util.find_spec("openpyxl") is not None),
+        ("LLM", "disabilitato" if not cfg.local_llm.enabled else str(cfg.local_llm.model_path), not cfg.local_llm.enabled or bool(cfg.local_llm.model_path and Path(cfg.local_llm.model_path).exists())),
+    ]
+    if db.exists():
+        create_schema(db)
+        with connect(db) as con:
+            row = con.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
+            checks[3] = ("Schema V2", row["value"] if row else "mancante", bool(row and int(row["value"]) >= 2))
+    table = Table(title="Doctor")
+    table.add_column("controllo")
+    table.add_column("dettaglio")
+    table.add_column("esito")
+    for name, detail, ok in checks:
+        table.add_row(name, detail, "OK" if ok else "ATTENZIONE")
+    console.print(table)
 
 
 @app.command("show-cluster")

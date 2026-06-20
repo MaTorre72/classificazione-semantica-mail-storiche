@@ -2,6 +2,10 @@
 
 Pipeline locale, modulare e ripetibile per importare archivi email, normalizzare il testo, generare embedding, produrre cluster semantici e interrogare i risultati.
 
+La V2 non clusterizza semplicemente il corpo della mail: ricostruisce un contesto operativo usando
+messaggio corrente, thread precedente e allegati selezionati, poi genera
+`semantic_text_for_embedding`. Tutti i contenuti restano sulla macchina.
+
 La prima versione e' una CLI Python con database SQLite. Le fasi pesanti di machine learning sono opzionali: il progetto puo' importare, pulire, cercare ed esportare email anche senza installare i pacchetti `ml`.
 
 ## Avvio rapido
@@ -15,6 +19,33 @@ email-cluster clean --project studio --db data/email_cluster.sqlite
 email-cluster search --query rentri --db data/email_cluster.sqlite
 email-cluster export --format csv --output data/output/emails.csv --db data/email_cluster.sqlite
 ```
+
+## Comando consigliato V2
+
+```powershell
+email-cluster run --input mail --db data/email_cluster.sqlite --project archivio_storico --profile balanced
+```
+
+Il comando rileva ricorsivamente MBOX, EML e cartelle Thunderbird, salta file invariati, elabora solo
+email e stadi nuovi, prepara il contesto, genera embedding semantici e aggiorna clustering e report.
+
+```powershell
+email-cluster status --project archivio_storico --input mail --db data/email_cluster.sqlite
+email-cluster doctor --input mail --db data/email_cluster.sqlite
+email-cluster context-report --project archivio_storico --db data/email_cluster.sqlite
+email-cluster attachment-report --project archivio_storico --db data/email_cluster.sqlite
+email-cluster explain-email --id 42 --db data/email_cluster.sqlite
+```
+
+Per aggiungere nuovi archivi basta copiarli nella stessa cartella e rilanciare `run`. Per invalidare
+uno stadio in modo esplicito usa `reset-stage`; il comando cancella solo i derivati del progetto.
+
+## Allegati e LLM locale
+
+Il nome e la categoria degli allegati sono sempre usati. L'estrazione testuale opzionale si installa
+con `pip install -e .[attachments]`. OCR resta disabilitato. Il sistema funziona senza LLM; un GGUF
+locale può essere configurato in `local_llm`, dopo aver installato `.[local-llm]`. Nessun modello viene
+scaricato automaticamente e nessuna API cloud viene chiamata.
 
 Per embedding e clustering:
 

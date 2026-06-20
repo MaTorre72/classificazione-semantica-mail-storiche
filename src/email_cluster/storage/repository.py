@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sqlite3
 import traceback as tb
 from collections.abc import Iterable
@@ -11,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from email_cluster.models import CleanedText, ParsedEmail
+from email_cluster.context.builder import SemanticContext
 
 
 def utcnow() -> str:
@@ -29,6 +31,14 @@ def embedding_to_blob(vector: np.ndarray) -> bytes:
 
 def blob_to_embedding(blob: bytes) -> np.ndarray:
     return np.load(io.BytesIO(blob), allow_pickle=False)
+
+
+def _thread_key(subject: str | None, headers: dict[str, Any]) -> str:
+    references = str(headers.get("References") or headers.get("In-Reply-To") or "").strip()
+    if references:
+        return references.split()[0].strip("<>")[:250]
+    value = re.sub(r"^(?:(?:re|fw|fwd|r|i)\s*:\s*)+", "", subject or "", flags=re.I)
+    return re.sub(r"\s+", " ", value).strip().lower()[:250]
 
 
 class Repository:
@@ -52,23 +62,38 @@ class Repository:
         return int(row["id"])
 
     def upsert_source_file(
-        self, project_id: int, path: str, file_type: str, file_hash: str | None, status: str
+        self, project_id: int, path: str, file_type: str, file_hash: str | None, status: str,
+        *, file_size: int | None = None, modified_at: str | None = None,
+        emails_found: int = 0, emails_imported: int = 0, errors_count: int = 0,
     ) -> int:
         self.con.execute(
             """
-            INSERT INTO source_files (project_id, path, file_type, file_hash, imported_at, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO source_files (
+                project_id, path, file_type, file_hash, imported_at, status, file_size, modified_at,
+                emails_found, emails_imported, errors_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(project_id, path) DO UPDATE SET
                 file_hash = excluded.file_hash,
                 imported_at = excluded.imported_at,
                 status = excluded.status
+                , file_size = excluded.file_size, modified_at = excluded.modified_at,
+                emails_found = excluded.emails_found, emails_imported = excluded.emails_imported,
+                errors_count = excluded.errors_count
             """,
-            (project_id, path, file_type, file_hash, utcnow(), status),
+            (project_id, path, file_type, file_hash, utcnow(), status, file_size, modified_at,
+             emails_found, emails_imported, errors_count),
         )
         row = self.con.execute(
             "SELECT id FROM source_files WHERE project_id = ? AND path = ?", (project_id, path)
         ).fetchone()
         return int(row["id"])
+
+    def source_file_is_current(self, project_id: int, path: str, file_hash: str) -> bool:
+        row = self.con.execute(
+            "SELECT file_hash, status FROM source_files WHERE project_id = ? AND path = ?",
+            (project_id, path),
+        ).fetchone()
+        return bool(row and row["file_hash"] == file_hash and row["status"] == "ok")
 
     def insert_email(self, project_id: int, source_file_id: int, parsed: ParsedEmail) -> int | None:
         try:
@@ -77,9 +102,10 @@ class Repository:
                 INSERT INTO emails (
                     project_id, source_file_id, original_message_id, message_hash, subject,
                     sender, recipients, cc, bcc, sent_at, imported_at, raw_headers_json,
-                    body_plain, body_html, body_extracted_text, has_attachments, parse_status
+                    body_plain, body_html, body_extracted_text, has_attachments, parse_status,
+                    thread_key
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     project_id,
@@ -99,6 +125,7 @@ class Repository:
                     parsed.body_extracted_text,
                     1 if parsed.attachments else 0,
                     "ok",
+                    _thread_key(parsed.subject, parsed.raw_headers),
                 ),
             )
         except sqlite3.IntegrityError:
@@ -108,8 +135,10 @@ class Repository:
             self.con.execute(
                 """
                 INSERT INTO attachments
-                    (email_id, filename, mime_type, size_bytes, sha256, extraction_status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (email_id, filename, mime_type, size_bytes, sha256, extraction_status,
+                     attachment_type, attachment_keywords_json, extracted_text, text_excerpt,
+                     extraction_error, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     email_id,
@@ -117,7 +146,13 @@ class Repository:
                     attachment.mime_type,
                     attachment.size_bytes,
                     attachment.sha256,
-                    "metadata_only",
+                    attachment.extraction_status,
+                    attachment.attachment_type,
+                    json_dumps(attachment.attachment_keywords),
+                    attachment.extracted_text,
+                    attachment.text_excerpt,
+                    attachment.extraction_error,
+                    utcnow(),
                 ),
             )
         return email_id
@@ -168,9 +203,11 @@ class Repository:
             INSERT OR IGNORE INTO clean_texts (
                 email_id, language, clean_text, cleaning_version, cleaning_flags_json, created_at,
                 semantic_text, subject_clean, body_current_message_clean, message_type,
-                quality_score, excluded_from_main_clustering, exclusion_reason
+                quality_score, excluded_from_main_clustering, exclusion_reason,
+                current_message_text, quoted_thread_text, forwarded_text, signature_text,
+                disclaimer_text, automatic_footer_text
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cleaned.email_id,
@@ -186,6 +223,12 @@ class Repository:
                 cleaned.quality_score,
                 1 if cleaned.excluded_from_main_clustering else 0,
                 cleaned.exclusion_reason,
+                cleaned.body_current_message_clean,
+                cleaned.quoted_thread_text,
+                cleaned.forwarded_text,
+                cleaned.signature_text,
+                cleaned.disclaimer_text,
+                cleaned.automatic_footer_text,
             ),
         )
         if cur.lastrowid:
@@ -195,6 +238,86 @@ class Repository:
             (cleaned.email_id, cleaned.cleaning_version),
         ).fetchone()
         return int(row["id"])
+
+    def emails_needing_context(self, project_id: int, context_version: str) -> list[sqlite3.Row]:
+        return list(self.con.execute("""
+            SELECT e.*, c.subject_clean, c.current_message_text, c.body_current_message_clean,
+                   c.quoted_thread_text, c.message_type, c.quality_score
+            FROM emails e
+            JOIN clean_texts c ON c.id = (
+                SELECT MAX(c2.id) FROM clean_texts c2 WHERE c2.email_id = e.id
+            )
+            LEFT JOIN semantic_contexts sc
+                ON sc.email_id = e.id AND sc.context_version = ?
+            WHERE e.project_id = ? AND sc.id IS NULL
+            ORDER BY e.id
+        """, (context_version, project_id)))
+
+    def attachment_rows(self, email_id: int) -> list[sqlite3.Row]:
+        return list(self.con.execute("SELECT * FROM attachments WHERE email_id = ?", (email_id,)))
+
+    def insert_semantic_context(self, context: SemanticContext) -> int:
+        self.con.execute("""
+            INSERT OR IGNORE INTO semantic_contexts (
+                email_id, context_version, message_type, message_type_confidence, context_strategy,
+                thread_context_summary, attachment_summary, semantic_summary, action_required,
+                topic_label, candidate_tags_json, semantic_text_for_embedding, quality_score,
+                excluded_from_main_clustering, exclusion_reason, llm_used, llm_model,
+                llm_parameters_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            context.email_id, context.context_version, context.message_type,
+            context.message_type_confidence, context.context_strategy,
+            context.thread_context_summary, context.attachment_summary, context.semantic_summary,
+            context.action_required, context.topic_label, json_dumps(context.candidate_tags or []),
+            context.semantic_text_for_embedding, context.quality_score,
+            int(context.excluded_from_main_clustering), context.exclusion_reason,
+            int(context.llm_used), context.llm_model, json_dumps(context.llm_parameters or {}), utcnow(),
+        ))
+        row = self.con.execute(
+            "SELECT id FROM semantic_contexts WHERE email_id = ? AND context_version = ?",
+            (context.email_id, context.context_version),
+        ).fetchone()
+        return int(row["id"])
+
+    def semantic_contexts_without_embedding(
+        self, project_id: int, model_id: int, limit: int | None = None,
+    ) -> list[sqlite3.Row]:
+        sql = """
+            SELECT sc.* FROM semantic_contexts sc
+            JOIN emails e ON e.id = sc.email_id
+            LEFT JOIN semantic_embeddings se
+                ON se.semantic_context_id = sc.id AND se.model_id = ?
+            WHERE e.project_id = ? AND se.id IS NULL
+              AND sc.excluded_from_main_clustering = 0
+              AND length(sc.semantic_text_for_embedding) > 0
+              AND sc.id = (SELECT MAX(sc2.id) FROM semantic_contexts sc2 WHERE sc2.email_id=sc.email_id)
+            ORDER BY sc.id
+        """
+        params: list[Any] = [model_id, project_id]
+        if limit:
+            sql += " LIMIT ?"
+            params.append(limit)
+        return list(self.con.execute(sql, params))
+
+    def insert_semantic_embedding(self, email_id: int, context_id: int, model_id: int, vector: np.ndarray) -> None:
+        self.con.execute("""
+            INSERT OR IGNORE INTO semantic_embeddings
+                (email_id, semantic_context_id, model_id, embedding, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (email_id, context_id, model_id, embedding_to_blob(vector), utcnow()))
+
+    def semantic_embeddings_for_project(self, project_id: int) -> list[sqlite3.Row]:
+        return list(self.con.execute("""
+            SELECT se.*, sc.semantic_text_for_embedding AS semantic_text,
+                   e.subject, e.sender
+            FROM semantic_embeddings se
+            JOIN semantic_contexts sc ON sc.id = se.semantic_context_id
+            JOIN emails e ON e.id = se.email_id
+            WHERE e.project_id = ? AND sc.excluded_from_main_clustering = 0
+              AND sc.id = (SELECT MAX(sc2.id) FROM semantic_contexts sc2 WHERE sc2.email_id=sc.email_id)
+            ORDER BY se.id
+        """, (project_id,)))
 
     def get_or_create_embedding_model(
         self, model_name: str, model_version: str | None, dimension: int, parameters: dict[str, Any]

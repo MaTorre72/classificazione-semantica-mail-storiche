@@ -62,6 +62,13 @@ def build_clean_text(
         quality_score=score,
         excluded_from_main_clustering=reason is not None,
         exclusion_reason=reason,
+        quoted_thread_text=normalize_whitespace("\n".join(segments.quoted_reply)),
+        forwarded_text=normalize_whitespace("\n".join(segments.forwarded_message)),
+        signature_text=normalize_whitespace("\n".join(segments.signature)),
+        disclaimer_text=normalize_whitespace("\n".join(segments.disclaimer)),
+        automatic_footer_text=normalize_whitespace(
+            "\n".join(segments.automatic_footer + segments.newsletter_footer)
+        ),
     )
 
 

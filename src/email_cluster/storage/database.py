@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import sqlite3
+import shutil
+from datetime import datetime
 from pathlib import Path
 
 
 SCHEMA_SQL = """
 PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS schema_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS projects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -20,8 +27,13 @@ CREATE TABLE IF NOT EXISTS source_files (
     path TEXT NOT NULL,
     file_type TEXT NOT NULL,
     file_hash TEXT,
+    file_size INTEGER,
+    modified_at TEXT,
     imported_at TEXT NOT NULL,
     status TEXT NOT NULL,
+    emails_found INTEGER DEFAULT 0,
+    emails_imported INTEGER DEFAULT 0,
+    errors_count INTEGER DEFAULT 0,
     UNIQUE(project_id, path),
     FOREIGN KEY(project_id) REFERENCES projects(id)
 );
@@ -45,6 +57,8 @@ CREATE TABLE IF NOT EXISTS emails (
     body_extracted_text TEXT,
     has_attachments INTEGER DEFAULT 0,
     parse_status TEXT NOT NULL,
+    import_run_id INTEGER,
+    thread_key TEXT,
     FOREIGN KEY(project_id) REFERENCES projects(id),
     FOREIGN KEY(source_file_id) REFERENCES source_files(id)
 );
@@ -58,6 +72,11 @@ CREATE TABLE IF NOT EXISTS attachments (
     sha256 TEXT,
     extracted_text TEXT,
     extraction_status TEXT,
+    attachment_type TEXT,
+    attachment_keywords_json TEXT,
+    text_excerpt TEXT,
+    extraction_error TEXT,
+    created_at TEXT,
     FOREIGN KEY(email_id) REFERENCES emails(id)
 );
 
@@ -75,9 +94,53 @@ CREATE TABLE IF NOT EXISTS clean_texts (
     quality_score REAL NOT NULL DEFAULT 0,
     excluded_from_main_clustering INTEGER NOT NULL DEFAULT 0,
     exclusion_reason TEXT,
+    current_message_text TEXT,
+    quoted_thread_text TEXT,
+    forwarded_text TEXT,
+    signature_text TEXT,
+    disclaimer_text TEXT,
+    automatic_footer_text TEXT,
     created_at TEXT NOT NULL,
     UNIQUE(email_id, cleaning_version),
     FOREIGN KEY(email_id) REFERENCES emails(id)
+);
+
+CREATE TABLE IF NOT EXISTS semantic_contexts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_id INTEGER NOT NULL,
+    context_version TEXT NOT NULL,
+    message_type TEXT NOT NULL,
+    message_type_confidence REAL NOT NULL DEFAULT 0,
+    context_strategy TEXT NOT NULL,
+    thread_context_summary TEXT,
+    attachment_summary TEXT,
+    semantic_summary TEXT,
+    action_required TEXT,
+    topic_label TEXT,
+    candidate_tags_json TEXT,
+    semantic_text_for_embedding TEXT NOT NULL,
+    quality_score REAL NOT NULL DEFAULT 0,
+    excluded_from_main_clustering INTEGER NOT NULL DEFAULT 0,
+    exclusion_reason TEXT,
+    llm_used INTEGER NOT NULL DEFAULT 0,
+    llm_model TEXT,
+    llm_parameters_json TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(email_id, context_version),
+    FOREIGN KEY(email_id) REFERENCES emails(id)
+);
+
+CREATE TABLE IF NOT EXISTS semantic_embeddings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email_id INTEGER NOT NULL,
+    semantic_context_id INTEGER NOT NULL,
+    model_id INTEGER NOT NULL,
+    embedding BLOB NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(semantic_context_id, model_id),
+    FOREIGN KEY(email_id) REFERENCES emails(id),
+    FOREIGN KEY(semantic_context_id) REFERENCES semantic_contexts(id),
+    FOREIGN KEY(model_id) REFERENCES embedding_models(id)
 );
 
 CREATE TABLE IF NOT EXISTS embedding_models (
@@ -205,10 +268,22 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return con
 
 
-def init_db(db_path: Path) -> None:
+def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
+    if db_path.exists() and backup_before_migration and _needs_v2_migration(db_path):
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(db_path, db_path.with_suffix(db_path.suffix + f".backup-{timestamp}"))
     with connect(db_path) as con:
         con.executescript(SCHEMA_SQL)
         _migrate_clean_texts(con)
+        _migrate_table(con, "source_files", {
+            "file_size": "INTEGER", "modified_at": "TEXT", "emails_found": "INTEGER DEFAULT 0",
+            "emails_imported": "INTEGER DEFAULT 0", "errors_count": "INTEGER DEFAULT 0",
+        })
+        _migrate_table(con, "emails", {"import_run_id": "INTEGER", "thread_key": "TEXT"})
+        _migrate_table(con, "attachments", {
+            "attachment_type": "TEXT", "attachment_keywords_json": "TEXT", "text_excerpt": "TEXT",
+            "extraction_error": "TEXT", "created_at": "TEXT",
+        })
         _migrate_table(con, "clustering_runs", {
             "profile_name": "TEXT", "total_emails_considered": "INTEGER", "excluded_before_clustering": "INTEGER",
             "total_clusters": "INTEGER", "total_noise": "INTEGER", "noise_ratio": "REAL",
@@ -223,6 +298,7 @@ def init_db(db_path: Path) -> None:
             "recurring_subjects_json": "TEXT", "recurring_senders_json": "TEXT",
             "mean_probability": "REAL", "confidence_label": "REAL",
         })
+        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '2')")
 
 
 def _migrate_clean_texts(con: sqlite3.Connection) -> None:
@@ -235,6 +311,12 @@ def _migrate_clean_texts(con: sqlite3.Connection) -> None:
         "quality_score": "REAL NOT NULL DEFAULT 0",
         "excluded_from_main_clustering": "INTEGER NOT NULL DEFAULT 0",
         "exclusion_reason": "TEXT",
+        "current_message_text": "TEXT",
+        "quoted_thread_text": "TEXT",
+        "forwarded_text": "TEXT",
+        "signature_text": "TEXT",
+        "disclaimer_text": "TEXT",
+        "automatic_footer_text": "TEXT",
     }
     for name, declaration in additions.items():
         if name not in columns:
@@ -246,3 +328,14 @@ def _migrate_table(con: sqlite3.Connection, table: str, additions: dict[str, str
     for name, declaration in additions.items():
         if name not in columns:
             con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+
+
+def _needs_v2_migration(db_path: Path) -> bool:
+    try:
+        with sqlite3.connect(db_path) as con:
+            row = con.execute(
+                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
+            ).fetchone()
+            return row is None or int(row[0]) < 2
+    except sqlite3.Error:
+        return True

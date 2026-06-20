@@ -12,6 +12,12 @@ class AttachmentRecord:
     mime_type: str | None
     size_bytes: int | None
     sha256: str | None = None
+    attachment_type: str = "altro"
+    attachment_keywords: list[str] = field(default_factory=list)
+    extracted_text: str | None = None
+    text_excerpt: str | None = None
+    extraction_status: str = "metadata_only"
+    extraction_error: str | None = None
 
 
 @dataclass(slots=True)
@@ -47,3 +53,8 @@ class CleanedText:
     quality_score: float = 0.0
     excluded_from_main_clustering: bool = False
     exclusion_reason: str | None = None
+    quoted_thread_text: str = ""
+    forwarded_text: str = ""
+    signature_text: str = ""
+    disclaimer_text: str = ""
+    automatic_footer_text: str = ""

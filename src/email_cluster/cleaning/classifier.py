@@ -17,8 +17,17 @@ def classify_message(subject: str, body: str, has_attachments: bool = False) -> 
         return "newsletter"
     if any(marker in text for marker in AUTOMATIC_MARKERS):
         return "auto_generated"
+    if any(marker in text for marker in (
+        "amazon", "trenitalia", "paypal", "account microsoft", "microsoft account",
+        "accesso insolito", "codice di sicurezza", "il tuo pacco", "il tuo ordine",
+        "webinar", "iscriviti all'evento", "iscriviti al webinar", "evento online",
+        "conferma registrazione", "ticket", "programma eventi",
+    )):
+        return "personal_or_commercial_notification"
     words = re.findall(r"\b[^\W\d_]{2,}\b", body, re.UNICODE)
     if not words and has_attachments:
+        return "attachment_only"
+    if has_attachments and len(words) <= 12 and re.search(r"\b(?:in|vedi|trovi|trasmetto).{0,25}allegat", body, re.I):
         return "attachment_only"
     if not words and re.search(r"inoltrat|forward", subject, re.I):
         return "forward_only"

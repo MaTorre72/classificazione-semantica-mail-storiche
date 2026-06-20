@@ -14,20 +14,25 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from email_cluster.models import AttachmentRecord, ParsedEmail
+from email_cluster.attachments.classifier import classify_attachment
+from email_cluster.attachments.extractor import extract_attachment_text
 
 
-def parse_eml(path: Path) -> ParsedEmail:
+def parse_eml(path: Path, *, extract_attachments: bool = True, max_attachment_size_mb: int = 20) -> ParsedEmail:
     msg = BytesParser(policy=policy.default).parsebytes(path.read_bytes())
-    return parse_message(msg, source_file=path, source_type="eml")
+    return parse_message(msg, source_file=path, source_type="eml", extract_attachments=extract_attachments, max_attachment_size_mb=max_attachment_size_mb)
 
 
-def parse_mbox(path: Path) -> Iterable[ParsedEmail]:
+def parse_mbox(path: Path, *, extract_attachments: bool = True, max_attachment_size_mb: int = 20) -> Iterable[ParsedEmail]:
     mbox = mailbox.mbox(path, factory=lambda f: BytesParser(policy=policy.default).parse(f))
     for msg in mbox:
-        yield parse_message(msg, source_file=path, source_type="mbox")
+        yield parse_message(msg, source_file=path, source_type="mbox", extract_attachments=extract_attachments, max_attachment_size_mb=max_attachment_size_mb)
 
 
-def parse_message(msg: Message, source_file: Path, source_type: str) -> ParsedEmail:
+def parse_message(
+    msg: Message, source_file: Path, source_type: str, *,
+    extract_attachments: bool = True, max_attachment_size_mb: int = 20,
+) -> ParsedEmail:
     plain_parts: list[str] = []
     html_parts: list[str] = []
     attachments: list[AttachmentRecord] = []
@@ -39,12 +44,25 @@ def parse_message(msg: Message, source_file: Path, source_type: str) -> ParsedEm
 
         if content_disposition == "attachment" or filename:
             payload = _payload_bytes(part)
+            attachment_type, keywords = classify_attachment(filename)
+            if extract_attachments:
+                extracted_text, status, error = extract_attachment_text(
+                    payload or b"", filename, content_type, max_attachment_size_mb
+                )
+            else:
+                extracted_text, status, error = None, "metadata_only", None
             attachments.append(
                 AttachmentRecord(
                     filename=filename,
                     mime_type=content_type,
                     size_bytes=len(payload) if payload is not None else None,
                     sha256=hashlib.sha256(payload).hexdigest() if payload else None,
+                    attachment_type=attachment_type,
+                    attachment_keywords=keywords,
+                    extracted_text=extracted_text,
+                    text_excerpt=(extracted_text or "")[:2000] or None,
+                    extraction_status=status,
+                    extraction_error=error,
                 )
             )
             continue

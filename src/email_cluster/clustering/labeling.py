@@ -16,6 +16,9 @@ BASE_STOPWORDS = {
     "trasmetto", "riferimento", "comunicazione", "richiesta", "riscontro", "informazioni",
     "documento", "documenti", "mail", "email", "oggetto", "inviato", "gmail", "marcotorresendi",
     "ciao", "marco", "mailto", "com", "https", "http", "www", "tel", "dell", "alle", "avv",
+    "delle", "come", "gli", "info", "qui", "torresendi", "parole", "chiave", "altro", "image",
+    "external", "fwd", "segue", "questo", "questa",
+    "any", "message", "recipient", "gdpr", "use", "sender", "privacy", "intended",
 }
 
 

@@ -82,7 +82,7 @@ class EmailClusterGui:
             row=0, column=0, sticky="w", pady=(0, 8)
         )
         buttons = [
-            ("Esegui tutto", self._run_pipeline),
+            ("Esegui V2", self._run_pipeline),
             ("Init DB", lambda: self._run_command("Init DB", ["init-db", "--db", self.db])),
             ("Import", self._run_import),
             ("Clean", self._run_clean),
@@ -180,8 +180,8 @@ class EmailClusterGui:
 
     def _run_pipeline(self) -> None:
         args = [
-            "run-pipeline",
-            "--source",
+            "run",
+            "--input",
             self.source,
             "--project",
             self.project,

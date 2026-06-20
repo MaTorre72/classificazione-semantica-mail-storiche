@@ -1,7 +1,16 @@
 database:
   path: data/email_cluster.sqlite
+  backup_before_migration: true
+
+project:
+  name: mail-storiche
+
+input:
+  path: data/input
+  recursive: true
 
 embedding:
+  mode: semantic
   model_name: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
   chunk_size_chars: 2000
   chunk_overlap_chars: 200
@@ -72,7 +81,7 @@ clustering:
     max_combinations: 12
 
 cleaning:
-  version: v1.0.1
+  version: v2.0.2
   min_semantic_chars: 80
   min_unique_words: 8
   max_semantic_chars: 12000
@@ -90,3 +99,41 @@ cleaning:
   disclaimer_patterns: []
   quote_patterns: []
   automatic_patterns: []
+
+semantic_preparation:
+  version: v2.0.2
+  min_semantic_chars: 120
+  min_unique_words: 12
+  max_thread_context_chars: 1500
+  max_attachment_summary_chars: 1500
+  exclude_message_types:
+    - auto_generated
+    - pec_receipt
+    - delivery_notification
+    - calendar_message
+    - newsletter
+    - personal_or_commercial_notification
+    - low_information
+  short_reply_patterns: [ok, grazie, perfetto, ricevuto, procedi pure]
+  technical_stopwords: [delle, come, nel, gli, info, qui, mail, email, allegato, allegata, documento, documenti, grazie, saluti, cordiali, buongiorno, buonasera, torresendi]
+
+attachments:
+  enabled: true
+  extract_text: true
+  max_file_size_mb: 20
+  enable_pdf: true
+  enable_docx: true
+  enable_xlsx: true
+  enable_ocr: false
+
+local_llm:
+  enabled: false
+  backend: llama_cpp
+  model_path: ""
+  max_input_chars: 4000
+  max_output_tokens: 256
+  temperature: 0.1
+  timeout_seconds: 60
+  use_for_thread_summary: true
+  use_for_attachment_summary: true
+  use_for_semantic_enrichment: true
