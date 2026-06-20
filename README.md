@@ -6,6 +6,9 @@ La V2 non clusterizza semplicemente il corpo della mail: ricostruisce un contest
 messaggio corrente, thread precedente e allegati selezionati, poi genera
 `semantic_text_for_embedding`. Tutti i contenuti restano sulla macchina.
 
+La V3 aggiunge revisione human-in-the-loop: i cluster sono proposte, le decisioni umane sono
+versionate in sessioni separate e alimentano tassonomia, esempi e regole interpretabili.
+
 La prima versione e' una CLI Python con database SQLite. Le fasi pesanti di machine learning sono opzionali: il progetto puo' importare, pulire, cercare ed esportare email anche senza installare i pacchetti `ml`.
 
 ## Avvio rapido
@@ -46,6 +49,17 @@ Il nome e la categoria degli allegati sono sempre usati. L'estrazione testuale o
 con `pip install -e .[attachments]`. OCR resta disabilitato. Il sistema funziona senza LLM; un GGUF
 locale può essere configurato in `local_llm`, dopo aver installato `.[local-llm]`. Nessun modello viene
 scaricato automaticamente e nessuna API cloud viene chiamata.
+
+## Revisione V3
+
+```powershell
+email-cluster review-start --project archivio_storico --run latest --db data/email_cluster.sqlite
+email-cluster review-dashboard --session 1 --db data/email_cluster.sqlite
+email-cluster review-next --session 1 --db data/email_cluster.sqlite
+email-cluster review-ui --project archivio_storico --db data/email_cluster.sqlite
+```
+
+La guida completa è in [Revisione umana e LLM locale](docs/revisione_umano_llm.md).
 
 Per embedding e clustering:
 

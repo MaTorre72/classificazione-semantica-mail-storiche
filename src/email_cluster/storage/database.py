@@ -257,6 +257,87 @@ CREATE TABLE IF NOT EXISTS errors (
     traceback TEXT,
     created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS review_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL,
+    clustering_run_id INTEGER NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL, completed_at TEXT, notes TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(clustering_run_id) REFERENCES clustering_runs(id)
+);
+
+CREATE TABLE IF NOT EXISTS cluster_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, review_session_id INTEGER NOT NULL,
+    clustering_run_id INTEGER NOT NULL, cluster_id INTEGER NOT NULL, auto_label TEXT,
+    llm_label TEXT, human_label TEXT, final_label TEXT, review_status TEXT NOT NULL DEFAULT 'pending',
+    human_notes TEXT, llm_summary TEXT, llm_confidence REAL, suggested_action TEXT,
+    review_priority REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(review_session_id, cluster_id),
+    FOREIGN KEY(review_session_id) REFERENCES review_sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS email_reviews (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, review_session_id INTEGER NOT NULL, email_id INTEGER NOT NULL,
+    clustering_run_id INTEGER NOT NULL, original_cluster_id INTEGER, suggested_cluster_id INTEGER,
+    human_cluster_id INTEGER, auto_message_type TEXT, llm_message_type TEXT, human_message_type TEXT,
+    human_topic_label TEXT, human_notes TEXT, review_status TEXT NOT NULL DEFAULT 'pending',
+    review_priority REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(review_session_id, email_id), FOREIGN KEY(review_session_id) REFERENCES review_sessions(id),
+    FOREIGN KEY(email_id) REFERENCES emails(id)
+);
+
+CREATE TABLE IF NOT EXISTS taxonomy_labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, label TEXT NOT NULL,
+    description TEXT, parent_label_id INTEGER, label_type TEXT NOT NULL DEFAULT 'altro',
+    source TEXT NOT NULL DEFAULT 'human', active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(project_id, label),
+    FOREIGN KEY(project_id) REFERENCES projects(id), FOREIGN KEY(parent_label_id) REFERENCES taxonomy_labels(id)
+);
+
+CREATE TABLE IF NOT EXISTS label_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, taxonomy_label_id INTEGER NOT NULL, email_id INTEGER NOT NULL,
+    example_type TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(taxonomy_label_id, email_id, example_type),
+    FOREIGN KEY(taxonomy_label_id) REFERENCES taxonomy_labels(id), FOREIGN KEY(email_id) REFERENCES emails(id)
+);
+
+CREATE TABLE IF NOT EXISTS label_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, label_id INTEGER NOT NULL,
+    rule_type TEXT NOT NULL, pattern TEXT NOT NULL, target_field TEXT, priority INTEGER DEFAULT 100,
+    active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id), FOREIGN KEY(label_id) REFERENCES taxonomy_labels(id)
+);
+
+CREATE TABLE IF NOT EXISTS llm_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER, run_type TEXT NOT NULL, backend TEXT,
+    model TEXT, prompt_version TEXT, started_at TEXT NOT NULL, completed_at TEXT, status TEXT NOT NULL,
+    parameters_json TEXT, FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+CREATE TABLE IF NOT EXISTS llm_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, input_hash TEXT NOT NULL, model TEXT NOT NULL,
+    prompt_version TEXT NOT NULL, input_excerpt TEXT, raw_output TEXT, parsed_output_json TEXT,
+    status TEXT NOT NULL, error TEXT, elapsed_ms INTEGER, created_at TEXT NOT NULL,
+    UNIQUE(input_hash, model, prompt_version)
+);
+
+CREATE TABLE IF NOT EXISTS llm_email_suggestions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, email_id INTEGER NOT NULL, llm_run_id INTEGER NOT NULL,
+    suggestion_json TEXT NOT NULL, confidence REAL, created_at TEXT NOT NULL,
+    FOREIGN KEY(email_id) REFERENCES emails(id), FOREIGN KEY(llm_run_id) REFERENCES llm_runs(id)
+);
+
+CREATE TABLE IF NOT EXISTS llm_cluster_suggestions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, clustering_run_id INTEGER NOT NULL, cluster_id INTEGER NOT NULL,
+    llm_run_id INTEGER NOT NULL, suggestion_json TEXT NOT NULL, confidence REAL, created_at TEXT NOT NULL,
+    FOREIGN KEY(llm_run_id) REFERENCES llm_runs(id)
+);
+
+CREATE TABLE IF NOT EXISTS review_suggestions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, review_session_id INTEGER, clustering_run_id INTEGER NOT NULL,
+    cluster_id INTEGER, suggestion_type TEXT NOT NULL, suggestion_json TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending', created_at TEXT NOT NULL,
+    FOREIGN KEY(review_session_id) REFERENCES review_sessions(id)
+);
 """
 
 
@@ -269,7 +350,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
-    if db_path.exists() and backup_before_migration and _needs_v2_migration(db_path):
+    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 3):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(db_path, db_path.with_suffix(db_path.suffix + f".backup-{timestamp}"))
     with connect(db_path) as con:
@@ -298,7 +379,7 @@ def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
             "recurring_subjects_json": "TEXT", "recurring_senders_json": "TEXT",
             "mean_probability": "REAL", "confidence_label": "REAL",
         })
-        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '2')")
+        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '3')")
 
 
 def _migrate_clean_texts(con: sqlite3.Connection) -> None:
@@ -330,12 +411,12 @@ def _migrate_table(con: sqlite3.Connection, table: str, additions: dict[str, str
             con.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
 
 
-def _needs_v2_migration(db_path: Path) -> bool:
+def _needs_migration(db_path: Path, target: int) -> bool:
     try:
         with sqlite3.connect(db_path) as con:
             row = con.execute(
                 "SELECT value FROM schema_meta WHERE key = 'schema_version'"
             ).fetchone()
-            return row is None or int(row[0]) < 2
+            return row is None or int(row[0]) < target
     except sqlite3.Error:
         return True

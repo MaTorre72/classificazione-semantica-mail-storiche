@@ -1,5 +1,18 @@
 # Comandi CLI
 
+## Revisione V3
+
+```powershell
+email-cluster review-start --project archivio_storico --run latest --db data/email_cluster.sqlite
+email-cluster review-dashboard --session 1 --db data/email_cluster.sqlite
+email-cluster review-cluster --session 1 --cluster 3 --db data/email_cluster.sqlite
+email-cluster review-next --session 1 --db data/email_cluster.sqlite
+email-cluster review-ui --project archivio_storico --db data/email_cluster.sqlite
+```
+
+Le revisioni non modificano le run. Azioni, tassonomia, esempi, regole, LLM locale ed export finale
+sono descritti in `docs/revisione_umano_llm.md`.
+
 ## Flusso V2 consigliato
 
 Primo avvio e successivi aggiornamenti usano lo stesso comando:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import os
 import subprocess
 import sys
 import threading
@@ -25,12 +26,13 @@ class EmailClusterGui:
         self.running = False
 
         self.source_var = StringVar(value="mail")
-        self.project_var = StringVar(value="archivio_storico")
-        self.db_var = StringVar(value="data/email_cluster.sqlite")
+        self.project_var = StringVar(value=os.environ.get("EMAIL_CLUSTER_PROJECT", "archivio_storico"))
+        self.db_var = StringVar(value=os.environ.get("EMAIL_CLUSTER_DB", "data/email_cluster.sqlite"))
         self.config_var = StringVar(value="config/default.yaml")
         self.export_dir_var = StringVar(value="data/output")
         self.cluster_var = StringVar(value="0")
         self.label_var = StringVar(value="")
+        self.session_var = StringVar(value="")
         self.query_var = StringVar(value="")
         self.skip_ml_var = BooleanVar(value=False)
 
@@ -96,21 +98,38 @@ class EmailClusterGui:
 
     def _build_review_tab(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(1, weight=1)
+        ttk.Label(parent, text="Sessione review").grid(row=0, column=0, sticky="w")
+        ttk.Entry(parent, textvariable=self.session_var, width=12).grid(row=0, column=1, sticky="w")
+        ttk.Button(parent, text="Avvia sessione", command=self._run_review_start).grid(row=0, column=2, padx=4)
+        ttk.Button(parent, text="Dashboard", command=self._run_review_dashboard).grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=4)
+        ttk.Button(parent, text="Prossimo", command=self._run_review_next).grid(row=1, column=1, sticky="ew", pady=4)
+        ttk.Button(parent, text="Apri cluster", command=self._run_review_cluster).grid(row=1, column=2, sticky="ew", pady=4)
         ttk.Button(parent, text="Lista cluster", command=self._run_clusters).grid(
-            row=0, column=0, sticky="ew", padx=(0, 8), pady=4
+            row=2, column=0, sticky="ew", padx=(0, 8), pady=4
         )
         ttk.Button(parent, text="Esporta revisione CSV", command=self._run_review_export).grid(
-            row=0, column=1, sticky="ew", pady=4
+            row=2, column=1, sticky="ew", pady=4
         )
 
-        ttk.Label(parent, text="Cluster ID").grid(row=1, column=0, sticky="w", pady=(12, 4))
+        ttk.Label(parent, text="Cluster ID").grid(row=3, column=0, sticky="w", pady=(12, 4))
         ttk.Entry(parent, textvariable=self.cluster_var, width=12).grid(
-            row=1, column=1, sticky="w", pady=(12, 4)
+            row=3, column=1, sticky="w", pady=(12, 4)
         )
-        ttk.Label(parent, text="Etichetta manuale").grid(row=2, column=0, sticky="w", pady=4)
-        ttk.Entry(parent, textvariable=self.label_var).grid(row=2, column=1, sticky="ew", pady=4)
-        ttk.Button(parent, text="Salva etichetta", command=self._run_set_label).grid(
-            row=3, column=1, sticky="e", pady=(8, 0)
+        ttk.Label(parent, text="Etichetta manuale").grid(row=4, column=0, sticky="w", pady=4)
+        ttk.Entry(parent, textvariable=self.label_var).grid(row=4, column=1, sticky="ew", pady=4)
+        ttk.Button(parent, text="Approva", command=self._run_approve_cluster).grid(row=5, column=0, sticky="ew", pady=4)
+        ttk.Button(parent, text="Rinomina", command=self._run_rename_cluster).grid(row=5, column=1, sticky="ew", pady=4)
+        ttk.Button(parent, text="Segna misto", command=self._run_mixed_cluster).grid(
+            row=5, column=2, sticky="ew", pady=4
+        )
+        ttk.Button(parent, text="Crea label tassonomia", command=self._run_add_taxonomy).grid(
+            row=6, column=1, sticky="ew", pady=4
+        )
+        ttk.Button(parent, text="Esporta report finale", command=self._run_final_report).grid(
+            row=6, column=2, sticky="ew", pady=4
+        )
+        ttk.Button(parent, text="Proposte LLM cluster", command=self._run_llm_labels).grid(
+            row=6, column=0, sticky="ew", pady=4
         )
 
     def _build_tools_tab(self, parent: ttk.Frame) -> None:
@@ -189,8 +208,6 @@ class EmailClusterGui:
             self.db,
             "--config",
             self.config,
-            "--export-dir",
-            self.export_dir,
         ]
         if self.skip_ml_var.get():
             args.append("--skip-ml")
@@ -227,6 +244,61 @@ class EmailClusterGui:
             "Review clusters",
             ["review-clusters", "--db", self.db, "--output", str(Path(self.export_dir) / "cluster_review.csv")],
         )
+
+    def _review_args(self) -> tuple[str, str] | None:
+        session = self.session_var.get().strip()
+        cluster = self.cluster_var.get().strip()
+        if not session:
+            messagebox.showwarning("Sessione mancante", "Avvia o inserisci una sessione review.")
+            return None
+        return session, cluster
+
+    def _run_review_start(self) -> None:
+        self._run_command("Review start", ["review-start", "--project", self.project, "--run", "latest", "--db", self.db])
+
+    def _run_review_dashboard(self) -> None:
+        args = self._review_args()
+        if args:
+            self._run_command("Review dashboard", ["review-dashboard", "--session", args[0], "--db", self.db])
+
+    def _run_review_next(self) -> None:
+        args = self._review_args()
+        if args:
+            self._run_command("Review next", ["review-next", "--session", args[0], "--db", self.db])
+
+    def _run_review_cluster(self) -> None:
+        args = self._review_args()
+        if args and args[1]:
+            self._run_command("Review cluster", ["review-cluster", "--session", args[0], "--cluster", args[1], "--db", self.db])
+
+    def _run_approve_cluster(self) -> None:
+        args = self._review_args()
+        if args and args[1]:
+            self._run_command("Approve cluster", ["approve-cluster", "--session", args[0], "--cluster", args[1], "--db", self.db])
+
+    def _run_rename_cluster(self) -> None:
+        args = self._review_args()
+        label = self.label_var.get().strip()
+        if args and args[1] and label:
+            self._run_command("Rename cluster", ["rename-cluster", "--session", args[0], "--cluster", args[1], "--label", label, "--db", self.db])
+
+    def _run_mixed_cluster(self) -> None:
+        args = self._review_args()
+        if args and args[1]:
+            self._run_command("Mixed cluster", ["mark-cluster-mixed", "--session", args[0], "--cluster", args[1], "--db", self.db])
+
+    def _run_add_taxonomy(self) -> None:
+        label = self.label_var.get().strip()
+        if label:
+            self._run_command("Add taxonomy", ["add-taxonomy-label", "--project", self.project, "--label", label, "--type", "tema_tecnico", "--db", self.db])
+
+    def _run_final_report(self) -> None:
+        args = self._review_args()
+        if args:
+            self._run_command("Final report", ["final-classification-report", "--session", args[0], "--output", str(Path(self.export_dir) / "final_report.html"), "--db", self.db])
+
+    def _run_llm_labels(self) -> None:
+        self._run_command("LLM cluster labels", ["llm-label-clusters", "--project", self.project, "--run", "latest", "--db", self.db, "--config", self.config])
 
     def _run_set_label(self) -> None:
         cluster_id = self.cluster_var.get().strip()

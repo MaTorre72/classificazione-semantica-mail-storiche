@@ -26,6 +26,7 @@ from email_cluster.ingestion.scanner import file_sha256, scan_local_folder
 from email_cluster.parsing.email_parser import parse_eml, parse_mbox
 from email_cluster.storage.database import connect, init_db as create_schema
 from email_cluster.storage.repository import Repository, blob_to_embedding
+from email_cluster.cli.review_commands import register_review_commands
 
 
 app = typer.Typer(help="Pipeline locale per classificazione semantica di archivi email.")
@@ -858,7 +859,7 @@ def doctor(
         ("Python", platform.python_version(), True),
         ("Database", str(db), db.exists()),
         ("Input", str(input_path), input_path.exists() and input_path.is_dir()),
-        ("Schema V2", "schema_meta", False),
+        ("Schema V3", "schema_meta", False),
         ("ML", "sentence_transformers/umap/hdbscan", all(importlib.util.find_spec(x) for x in ("sentence_transformers", "umap", "hdbscan"))),
         ("PDF", "pypdf opzionale", importlib.util.find_spec("pypdf") is not None),
         ("DOCX", "python-docx opzionale", importlib.util.find_spec("docx") is not None),
@@ -869,7 +870,7 @@ def doctor(
         create_schema(db)
         with connect(db) as con:
             row = con.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
-            checks[3] = ("Schema V2", row["value"] if row else "mancante", bool(row and int(row["value"]) >= 2))
+            checks[3] = ("Schema V3", row["value"] if row else "mancante", bool(row and int(row["value"]) >= 3))
     table = Table(title="Doctor")
     table.add_column("controllo")
     table.add_column("dettaglio")
@@ -972,6 +973,9 @@ def report(
     with connect(db) as con:
         count = write_markdown_report(con, output, run)
     console.print(f"Report scritto: {output} ({count} cluster)")
+
+
+register_review_commands(app)
 
 
 if __name__ == "__main__":

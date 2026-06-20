@@ -37,6 +37,15 @@ Lo schema e' in `src/email_cluster/storage/database.py`. Le tabelle principali s
 - `clustering_runs`
 - `email_clusters`
 - `clusters`
+- `review_sessions`, `cluster_reviews`, `email_reviews`
+- `taxonomy_labels`, `label_examples`, `label_rules`
+- `llm_runs`, `llm_cache`, `llm_email_suggestions`, `llm_cluster_suggestions`
+
+## Revisione V3
+
+La run automatica è immutabile. Una `review_session` sovrappone decisioni umane e proposte LLM,
+costruendo una classificazione finale esportabile. Tassonomia, esempi e regole alimentano suggerimenti
+progressivi senza training pesante.
 - `errors`
 
 ## Estensioni consigliate

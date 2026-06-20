@@ -128,12 +128,22 @@ attachments:
 
 local_llm:
   enabled: false
-  backend: llama_cpp
+  backend: ollama
+  ollama_url: http://localhost:11434
+  model: ""
   model_path: ""
-  max_input_chars: 4000
-  max_output_tokens: 256
+  max_input_chars: 6000
+  max_output_tokens: 512
   temperature: 0.1
-  timeout_seconds: 60
+  timeout_seconds: 90
+  require_json: true
+  cache_enabled: true
+  cache_version: v1
   use_for_thread_summary: true
   use_for_attachment_summary: true
   use_for_semantic_enrichment: true
+  use_for_email_triage: true
+  use_for_cluster_labeling: true
+  use_for_cluster_summary: true
+  use_for_taxonomy_suggestion: true
+  use_for_split_suggestion: true

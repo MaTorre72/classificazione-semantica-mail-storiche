@@ -119,6 +119,8 @@ class AttachmentsConfig(BaseModel):
 class LocalLlmConfig(BaseModel):
     enabled: bool = False
     backend: str = "llama_cpp"
+    ollama_url: str = "http://localhost:11434"
+    model: str = ""
     model_path: str = ""
     max_input_chars: int = 4000
     max_output_tokens: int = 256
@@ -127,6 +129,14 @@ class LocalLlmConfig(BaseModel):
     use_for_thread_summary: bool = True
     use_for_attachment_summary: bool = True
     use_for_semantic_enrichment: bool = True
+    require_json: bool = True
+    cache_enabled: bool = True
+    cache_version: str = "v1"
+    use_for_email_triage: bool = True
+    use_for_cluster_labeling: bool = True
+    use_for_cluster_summary: bool = True
+    use_for_taxonomy_suggestion: bool = True
+    use_for_split_suggestion: bool = True
 
 
 class AppConfig(BaseModel):
