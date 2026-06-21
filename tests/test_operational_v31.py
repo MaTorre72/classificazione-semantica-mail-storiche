@@ -51,7 +51,7 @@ def test_context_actions_and_export(tmp_path) -> None:
     assert row["review_status"] == "approved"
     assert events >= 2
     assert count == 2
-    assert "Contesti operativi" in output.read_text(encoding="utf-8")
+    assert "Classificazione per Insiemi" in output.read_text(encoding="utf-8")
 
 
 def test_macro_classifier_examples() -> None:

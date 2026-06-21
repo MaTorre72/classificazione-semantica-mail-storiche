@@ -1,7 +1,7 @@
 # Classificazione semantica mail storiche
 
-Strumento locale per trasformare archivi MBOX/EML in **contesti operativi comprensibili**: pratiche,
-adempimenti, temi tecnici, documentazione e conversazioni. I cluster sono solo un supporto tecnico;
+Strumento locale per trasformare archivi MBOX/EML in **Insiemi comprensibili**: pratiche,
+adempimenti, argomenti tecnici, documentazione e conversazioni. L'analisi automatica è un supporto;
 la classificazione finale è costruita e confermata dall'utente.
 
 Tutto resta sul computer: nessuna API cloud, telemetria o invio di email e allegati.
@@ -30,18 +30,18 @@ vengono saltati.
 email-cluster ui --project archivio_storico --db data/email_cluster.sqlite
 ```
 
-Si apre su `http://127.0.0.1:8765` e mostra stato archivio, macro-categorie e **una sola prossima
+Si apre su `http://127.0.0.1:8765` e mostra stato archivio, Aree e **una sola prossima
 azione consigliata**. I comandi CLI restano disponibili nella documentazione avanzata.
 
-### 3. Controlla macro categorie e prossimo contesto
+### 3. Controlla Aree e prossimo Insieme
 
 ```powershell
 email-cluster macro-review --project archivio_storico --db data/email_cluster.sqlite
 email-cluster review --next --project archivio_storico --db data/email_cluster.sqlite
 ```
 
-La separazione tra professionale, personale, account, newsletter, ecommerce e notifiche avviene prima
-dei contesti professionali.
+La separazione tra professionale, personale, account, newsletter, acquisti e notifiche avviene prima
+degli Insiemi professionali.
 
 ### 4. Approva o correggi
 
@@ -50,7 +50,7 @@ email-cluster approve-context --context 12 --db data/email_cluster.sqlite
 email-cluster rename-context --context 12 --name "Tenax — registri rifiuti sede TPM" --db data/email_cluster.sqlite
 ```
 
-Sono disponibili anche spostamento/esclusione email, split operativo e marcatura non professionale.
+Sono disponibili anche spostamento/esclusione email, divisione di un Insieme e marcatura non operativa.
 Ogni azione è tracciata e non modifica le run tecniche originali.
 
 ### 5. Esporta
@@ -80,7 +80,9 @@ Il LLM propone nome, sintesi ed email sospette; l'utente mantiene sempre il cont
 - [Console locale V4](docs/interfaccia_utente.md)
 - [Configurazione LLM locale](docs/llm_locale.md)
 - [Comandi avanzati](docs/avanzato.md)
-- [Contesti operativi V3.1](docs/v3_1_rientro_semplicita_controllo_contesto.md)
+- [Gestire la classificazione](docs/classificazione.md)
+- [Modelli LLM leggeri](docs/llm_leggeri.md)
+- [Termini tecnici avanzati](docs/avanzato_termini_tecnici.md)
 - [Revisione umana e LLM](docs/revisione_umano_llm.md)
 - [Architettura](docs/architettura.md)
 

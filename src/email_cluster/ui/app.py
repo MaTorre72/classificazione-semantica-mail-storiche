@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from email_cluster.ui.data import UiData
+from email_cluster.ui.terminology import TERMS, area_name, status_name
 
 
 def create_app(
@@ -16,6 +17,9 @@ def create_app(
     app = FastAPI(title="Console classificazione email storiche", docs_url=None, redoc_url=None)
     data = UiData(db_path, project, config_path)
     templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+    templates.env.globals.update(
+        term=lambda key: TERMS[key], area_name=area_name, status_name=status_name
+    )
     app.state.data = data
 
     def page(request: Request, template: str, **context: Any) -> HTMLResponse:
@@ -79,7 +83,11 @@ def create_app(
 
     @app.get("/taxonomy", response_class=HTMLResponse)
     def taxonomy(request: Request):
-        return page(request, "taxonomy.html", nodes=data.taxonomy())
+        return page(request, "taxonomy.html", nodes=data.taxonomy(), active="classification")
+
+    @app.get("/classification", response_class=HTMLResponse)
+    def classification(request: Request):
+        return page(request, "classification.html", **data.classification())
 
     @app.get("/export", response_class=HTMLResponse)
     def export_page(request: Request):
@@ -113,6 +121,54 @@ def create_app(
         values = await request.json()
         data.save_llm(values)
         return {"ok": True}
+
+    @app.post("/api/llm/pull")
+    async def llm_pull(request: Request):
+        values = await request.json()
+        try:
+            return data.pull_model(values["model"], bool(values.get("confirmed")))
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/llm/test")
+    async def llm_test(request: Request):
+        values = await request.json()
+        try:
+            return data.test_llm(values["model"])
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/classification/areas")
+    async def area_create(request: Request):
+        data.create_area(await request.json())
+        return {"ok": True}
+
+    @app.post("/api/classification/areas/{area_id}")
+    async def area_update(area_id: int, request: Request):
+        data.update_area(area_id, await request.json())
+        return {"ok": True}
+
+    @app.post("/api/classification/labels")
+    async def label_create(request: Request):
+        data.create_label(await request.json())
+        return {"ok": True}
+
+    @app.post("/api/classification/labels/{label_id}")
+    async def label_update(label_id: int, request: Request):
+        data.update_label(label_id, await request.json())
+        return {"ok": True}
+
+    @app.post("/api/classification/rules")
+    async def rule_create(request: Request):
+        return {"ok": True, "id": data.create_rule(await request.json())}
+
+    @app.post("/api/classification/rules/{rule_id}/preview")
+    def rule_preview(rule_id: int):
+        return data.preview_rule(rule_id)
+
+    @app.post("/api/classification/rules/{rule_id}/apply")
+    def rule_apply(rule_id: int):
+        return {"ok": True, "count": data.apply_rule(rule_id)}
 
     @app.post("/api/contexts/{context_id}/llm-suggest")
     def llm_suggest(context_id: int):

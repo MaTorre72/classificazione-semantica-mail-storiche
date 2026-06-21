@@ -45,7 +45,7 @@ def test_v2_schema_and_incremental_source_state(tmp_path) -> None:
         assert not repo.source_file_is_current(project_id, "inbox.mbox", "changed")
         version = con.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0]
         context_columns = {row["name"] for row in con.execute("PRAGMA table_info(semantic_contexts)")}
-    assert version == "4"
+    assert version == "5"
     assert {"context_strategy", "semantic_text_for_embedding", "llm_used"} <= context_columns
 
 

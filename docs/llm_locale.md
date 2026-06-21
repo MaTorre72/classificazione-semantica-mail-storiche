@@ -1,14 +1,14 @@
-# LLM locale
+# LLM locale guidato
 
-Il LLM è un assistente opzionale. La pipeline, la revisione e l'esportazione funzionano anche quando
-è disattivato.
+Il LLM è opzionale. Tutta la classificazione funziona quando è disattivato.
 
-La pagina **LLM locale** verifica Ollama su `http://127.0.0.1:11434`, elenca i modelli già presenti e
-salva la scelta in `config/default.yaml`. Non scarica né installa modelli.
+La pagina **LLM locale** guida attraverso stato, installazione Ollama, rilevamento dei modelli, scelta
+e test. Se Ollama non risponde, spiega in linguaggio semplice cosa controllare. I dati non vengono
+inviati a servizi cloud.
 
-Le risposte sono validate rispetto a uno schema strutturato. Una proposta non viene applicata finché
-l'utente non la conferma nel dettaglio del contesto. La configurazione raccomandata mantiene
-`mode: suggestions_only`.
+Il programma non installa Ollama e non scarica modelli automaticamente. Premendo **Installa modello**
+mostra prima il comando, l'uso di spazio e una richiesta di consenso. Un modello viene abilitato
+soltanto dopo un test riuscito.
 
-Per sicurezza sono accettati endpoint Ollama su `localhost` o `127.0.0.1`. Testi delle email e
-allegati non vengono inviati a servizi cloud.
+Nel dettaglio di un Insieme il LLM può proporre nome, Area, Argomento ed email fuori posto. Nessuna
+proposta viene applicata senza conferma umana.

@@ -34,7 +34,16 @@ def make_client(tmp_path: Path) -> tuple[TestClient, Path]:
 
 def test_main_console_pages_render(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
-    for path in ("/", "/wizard", "/llm", "/macro", "/contexts", "/taxonomy", "/export"):
+    for path in (
+        "/",
+        "/wizard",
+        "/llm",
+        "/macro",
+        "/contexts",
+        "/classification",
+        "/taxonomy",
+        "/export",
+    ):
         response = client.get(path)
         assert response.status_code == 200
         assert "Archivio storico" in response.text
@@ -89,3 +98,65 @@ def test_llm_settings_stay_local(tmp_path: Path) -> None:
     page = client.get("/llm")
     assert "qwen-local" in page.text
     assert "non scarica modelli" in page.text
+
+
+def test_simple_terminology_is_visible(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    page = client.get("/classification")
+    assert "Area → Insieme → Email" in page.text
+    assert "Classificazione" in page.text
+    detail = client.get("/contexts")
+    assert "Insiemi" in detail.text
+    assert "Contesti operativi" not in detail.text
+
+
+def test_manage_areas_labels_and_rules(tmp_path: Path) -> None:
+    client, db = make_client(tmp_path)
+    assert (
+        client.post(
+            "/api/classification/areas", json={"display_name": "Progetti speciali"}
+        ).status_code
+        == 200
+    )
+    with connect(db) as con:
+        area = con.execute(
+            "SELECT * FROM classification_areas WHERE display_name='Progetti speciali'"
+        ).fetchone()
+    assert (
+        client.post(
+            f"/api/classification/areas/{area['id']}",
+            json={"display_name": "Progetti", "active": False},
+        ).status_code
+        == 200
+    )
+    assert client.post("/api/classification/labels", json={"label": "MUD"}).status_code == 200
+    with connect(db) as con:
+        label = con.execute("SELECT * FROM taxonomy_labels WHERE label='MUD'").fetchone()
+    assert (
+        client.post(
+            f"/api/classification/labels/{label['id']}", json={"label": "MUD annuale"}
+        ).status_code
+        == 200
+    )
+    rule = client.post(
+        "/api/classification/rules",
+        json={
+            "name": "Tenax",
+            "condition_type": "sender_contains",
+            "pattern": "tenax.it",
+            "action_type": "label",
+            "action_value": "Cliente Tenax",
+            "priority": 100,
+        },
+    ).json()
+    preview = client.post(f"/api/classification/rules/{rule['id']}/preview").json()
+    assert preview["count"] >= 1
+    applied = client.post(f"/api/classification/rules/{rule['id']}/apply").json()
+    assert applied["count"] == preview["count"]
+
+
+def test_model_pull_requires_confirmation(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    response = client.post("/api/llm/pull", json={"model": "qwen2.5:1.5b", "confirmed": False})
+    assert response.status_code == 409
+    assert "conferma esplicita" in response.json()["detail"]

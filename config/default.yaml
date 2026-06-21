@@ -1,105 +1,141 @@
 database:
   path: data/email_cluster.sqlite
   backup_before_migration: true
-
 project:
   name: mail-storiche
-
 input:
   path: data/input
   recursive: true
-
 embedding:
   mode: semantic
   model_name: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
   chunk_size_chars: 2000
   chunk_overlap_chars: 200
   batch_size: 32
-
 umap:
   n_neighbors: 15
   n_components: 5
   min_dist: 0.0
   metric: cosine
   random_state: 42
-
 hdbscan:
   min_cluster_size: 5
   min_samples: 3
   metric: euclidean
   cluster_selection_method: leaf
-
 clustering:
   active_profile: balanced
   profiles:
     conservative:
-      umap: {n_neighbors: 15, n_components: 5, min_dist: 0.0, metric: cosine, random_state: 42}
-      hdbscan: {min_cluster_size: 10, min_samples: 5, metric: euclidean, cluster_selection_method: eom}
+      umap:
+        n_neighbors: 15
+        n_components: 5
+        min_dist: 0.0
+        metric: cosine
+        random_state: 42
+      hdbscan:
+        min_cluster_size: 10
+        min_samples: 5
+        metric: euclidean
+        cluster_selection_method: eom
     balanced:
-      umap: {n_neighbors: 10, n_components: 5, min_dist: 0.0, metric: cosine, random_state: 42}
-      hdbscan: {min_cluster_size: 6, min_samples: 3, metric: euclidean, cluster_selection_method: leaf}
+      umap:
+        n_neighbors: 10
+        n_components: 5
+        min_dist: 0.0
+        metric: cosine
+        random_state: 42
+      hdbscan:
+        min_cluster_size: 6
+        min_samples: 3
+        metric: euclidean
+        cluster_selection_method: leaf
     exploratory:
-      umap: {n_neighbors: 8, n_components: 5, min_dist: 0.0, metric: cosine, random_state: 42}
-      hdbscan: {min_cluster_size: 5, min_samples: 2, metric: euclidean, cluster_selection_method: leaf}
+      umap:
+        n_neighbors: 8
+        n_components: 5
+        min_dist: 0.0
+        metric: cosine
+        random_state: 42
+      hdbscan:
+        min_cluster_size: 5
+        min_samples: 2
+        metric: euclidean
+        cluster_selection_method: leaf
   normalize_embeddings: true
   min_cluster_size_absolute: 4
-  max_noise_ratio_warning: 0.60
+  max_noise_ratio_warning: 0.6
   max_largest_cluster_ratio_warning: 0.45
   min_clusters_warning: 3
   low_confidence_threshold: 0.5
-  allowed_message_types: [operational_email]
+  allowed_message_types:
+  - operational_email
   technical_stopwords:
-    - buongiorno
-    - buonasera
-    - grazie
-    - cordiali
-    - saluti
-    - allegato
-    - allegata
-    - invio
-    - trasmetto
-    - riferimento
-    - comunicazione
-    - richiesta
-    - riscontro
-    - informazioni
-    - documento
-    - documenti
-    - mail
-    - email
-    - ciao
-    - marco
-    - mailto
-    - com
-    - https
-    - tel
+  - buongiorno
+  - buonasera
+  - grazie
+  - cordiali
+  - saluti
+  - allegato
+  - allegata
+  - invio
+  - trasmetto
+  - riferimento
+  - comunicazione
+  - richiesta
+  - riscontro
+  - informazioni
+  - documento
+  - documenti
+  - mail
+  - email
+  - ciao
+  - marco
+  - mailto
+  - com
+  - https
+  - tel
   sweep:
-    n_neighbors: [5, 8, 10, 12, 15]
-    n_components: [3, 5, 8]
-    min_cluster_size: [4, 5, 6, 8, 10]
-    min_samples: [2, 3, 5]
+    n_neighbors:
+    - 5
+    - 8
+    - 10
+    - 12
+    - 15
+    n_components:
+    - 3
+    - 5
+    - 8
+    min_cluster_size:
+    - 4
+    - 5
+    - 6
+    - 8
+    - 10
+    min_samples:
+    - 2
+    - 3
+    - 5
     max_combinations: 12
-
 cleaning:
   version: v2.0.2
   min_semantic_chars: 80
   min_unique_words: 8
   max_semantic_chars: 12000
   exclude_message_types:
-    - short_ack
-    - auto_generated
-    - pec_receipt
-    - delivery_notification
-    - calendar_message
-    - newsletter
-    - attachment_only
-    - forward_only
-    - low_information
+  - short_ack
+  - auto_generated
+  - pec_receipt
+  - delivery_notification
+  - calendar_message
+  - newsletter
+  - attachment_only
+  - forward_only
+  - low_information
   signature_patterns: []
   disclaimer_patterns: []
   quote_patterns: []
   automatic_patterns: []
-
 semantic_preparation:
   version: v2.0.2
   min_semantic_chars: 120
@@ -107,16 +143,38 @@ semantic_preparation:
   max_thread_context_chars: 1500
   max_attachment_summary_chars: 1500
   exclude_message_types:
-    - auto_generated
-    - pec_receipt
-    - delivery_notification
-    - calendar_message
-    - newsletter
-    - personal_or_commercial_notification
-    - low_information
-  short_reply_patterns: [ok, grazie, perfetto, ricevuto, procedi pure]
-  technical_stopwords: [delle, come, nel, gli, info, qui, mail, email, allegato, allegata, documento, documenti, grazie, saluti, cordiali, buongiorno, buonasera, torresendi]
-
+  - auto_generated
+  - pec_receipt
+  - delivery_notification
+  - calendar_message
+  - newsletter
+  - personal_or_commercial_notification
+  - low_information
+  short_reply_patterns:
+  - ok
+  - grazie
+  - perfetto
+  - ricevuto
+  - procedi pure
+  technical_stopwords:
+  - delle
+  - come
+  - nel
+  - gli
+  - info
+  - qui
+  - mail
+  - email
+  - allegato
+  - allegata
+  - documento
+  - documenti
+  - grazie
+  - saluti
+  - cordiali
+  - buongiorno
+  - buonasera
+  - torresendi
 attachments:
   enabled: true
   extract_text: true
@@ -125,13 +183,12 @@ attachments:
   enable_docx: true
   enable_xlsx: true
   enable_ocr: false
-
 local_llm:
   enabled: false
   backend: ollama
   ollama_url: http://localhost:11434
-  model: ""
-  model_path: ""
+  model: ''
+  model_path: ''
   max_input_chars: 6000
   max_output_tokens: 512
   temperature: 0.1
@@ -148,4 +205,32 @@ local_llm:
   use_for_taxonomy_suggestion: true
   use_for_split_suggestion: true
   mode: suggestions_only
-  recommended_models: [qwen2.5:1.5b, qwen2.5:3b, llama3.2:3b, gemma3:1b, gemma3:4b]
+  selected_model: ''
+  auto_download_models: false
+  recommended_models:
+    ultralight:
+    - smollm:135m
+    - smollm:360m
+    - qwen2.5:0.5b
+    light:
+    - qwen2.5:1.5b
+    - gemma3:1b
+    - llama3.2:1b
+    - smollm:1.7b
+    better_quality:
+    - qwen2.5:3b
+    - llama3.2:3b
+    - gemma3:4b
+ui:
+  terminology: simple
+  show_technical_terms: false
+classification:
+  visible_model:
+    area: Area
+    set: Insieme
+    label: Etichetta
+    topic: Argomento
+    status: Stato
+  allow_user_areas: true
+  allow_user_labels: true
+  allow_rules: true

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,6 +25,7 @@ from email_cluster.operational.service import (
 from email_cluster.review.repository import ReviewRepository
 from email_cluster.storage.database import connect, init_db
 from email_cluster.storage.repository import Repository, utcnow
+from email_cluster.ui.terminology import AREA_NAMES, area_name
 
 
 class UiData:
@@ -41,6 +44,25 @@ class UiData:
             pid = Repository(con).project_id(self.project)
             run_id = ReviewRepository(con).resolve_run(pid, "latest")
             return build_operational_contexts(con, pid, run_id)
+
+    def ensure_areas(self) -> None:
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            for index, (internal, display) in enumerate(AREA_NAMES.items()):
+                con.execute(
+                    """INSERT OR IGNORE INTO classification_areas
+                    (project_id,internal_name,display_name,color,active,include_in_report,is_operational,
+                     review_priority,created_at,updated_at) VALUES(?,?,?,'#52616d',1,1,?,?,?,?)""",
+                    (
+                        pid,
+                        internal,
+                        display,
+                        int(internal.startswith("professionale")),
+                        100 - index,
+                        utcnow(),
+                        utcnow(),
+                    ),
+                )
 
     def dashboard(self) -> dict[str, Any]:
         self.ensure_contexts()
@@ -89,17 +111,17 @@ class UiData:
         workflow = [
             {"name": "Import", "status": "completed" if source_files else "todo"},
             {"name": "Cleaning", "status": "completed" if cleaned >= total and total else "todo"},
-            {"name": "Macro-categorie", "status": "completed" if macro_count else "todo"},
-            {"name": "Contesti operativi", "status": "completed" if contexts else "todo"},
-            {"name": "Revisione umana", "status": "human" if pending else "completed"},
+            {"name": "Aree", "status": "completed" if macro_count else "todo"},
+            {"name": "Insiemi", "status": "completed" if contexts else "todo"},
+            {"name": "Controllo umano", "status": "human" if pending else "completed"},
             {"name": "Esportazione", "status": "completed" if exported else "todo"},
         ]
         if next_context:
             next_action = {
-                "title": "Rivedi il prossimo contesto operativo",
+                "title": "Controlla il prossimo Insieme",
                 "detail": next_context["name"],
                 "href": f"/contexts/{next_context['id']}",
-                "button": "Apri contesto",
+                "button": "Apri Insieme",
             }
         elif not cfg.local_llm.enabled:
             next_action = {
@@ -111,7 +133,7 @@ class UiData:
         else:
             next_action = {
                 "title": "Esporta la classificazione finale",
-                "detail": "I contesti non hanno decisioni pendenti.",
+                "detail": "Gli Insiemi non hanno decisioni pendenti.",
                 "href": "/export",
                 "button": "Apri export",
             }
@@ -126,6 +148,7 @@ class UiData:
             "suspicious": suspicious,
             "llm_enabled": cfg.local_llm.enabled,
             "llm_backend": cfg.local_llm.backend,
+            "llm_model": cfg.local_llm.selected_model or cfg.local_llm.model,
             "latest": latest_run["completed_at"] if latest_run else None,
             "workflow": workflow,
             "next_action": next_action,
@@ -271,6 +294,196 @@ class UiData:
                 )
             ]
 
+    def classification(self) -> dict[str, Any]:
+        self.ensure_areas()
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            areas = [
+                dict(row)
+                for row in con.execute(
+                    "SELECT * FROM classification_areas WHERE project_id=? ORDER BY review_priority DESC,display_name",
+                    (pid,),
+                )
+            ]
+            labels = [
+                dict(row)
+                for row in con.execute(
+                    """SELECT tl.*,count(el.id) usage_count FROM taxonomy_labels tl
+                LEFT JOIN email_labels el ON el.label_id=tl.id WHERE tl.project_id=? GROUP BY tl.id ORDER BY tl.active DESC,tl.label""",
+                    (pid,),
+                )
+            ]
+            rules = [
+                dict(row)
+                for row in con.execute(
+                    "SELECT * FROM classification_rules WHERE project_id=? ORDER BY priority DESC,id",
+                    (pid,),
+                )
+            ]
+        return {"areas": areas, "labels": labels, "rules": rules, "sets": self.contexts({})}
+
+    def create_area(self, values: dict[str, Any]) -> None:
+        display = values["display_name"].strip()
+        internal = re.sub(r"[^a-z0-9]+", "_", display.lower()).strip("_") or "area_personalizzata"
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            con.execute(
+                """INSERT INTO classification_areas(project_id,internal_name,display_name,color,active,
+                include_in_report,is_operational,review_priority,created_at,updated_at) VALUES(?,?,?,?,1,?,?,?,?,?)""",
+                (
+                    pid,
+                    internal,
+                    display,
+                    values.get("color", "#52616d"),
+                    int(values.get("include_in_report", True)),
+                    int(values.get("is_operational", True)),
+                    int(values.get("review_priority", 100)),
+                    utcnow(),
+                    utcnow(),
+                ),
+            )
+
+    def update_area(self, area_id: int, values: dict[str, Any]) -> None:
+        allowed = {
+            "display_name",
+            "color",
+            "active",
+            "include_in_report",
+            "is_operational",
+            "review_priority",
+        }
+        changes = {key: values[key] for key in allowed if key in values}
+        if changes:
+            columns = ",".join(f"{key}=?" for key in changes)
+            with connect(self.db_path) as con:
+                con.execute(
+                    f"UPDATE classification_areas SET {columns},updated_at=? WHERE id=?",
+                    (*changes.values(), utcnow(), area_id),
+                )
+
+    def create_label(self, values: dict[str, Any]) -> None:
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            ReviewRepository(con).add_taxonomy_label(
+                pid, values["label"].strip(), "user", values.get("description", "")
+            )
+
+    def update_label(self, label_id: int, values: dict[str, Any]) -> None:
+        with connect(self.db_path) as con:
+            if "label" in values:
+                con.execute(
+                    "UPDATE taxonomy_labels SET label=?,updated_at=? WHERE id=?",
+                    (values["label"].strip(), utcnow(), label_id),
+                )
+            if "active" in values:
+                con.execute(
+                    "UPDATE taxonomy_labels SET active=?,updated_at=? WHERE id=?",
+                    (int(values["active"]), utcnow(), label_id),
+                )
+
+    def create_rule(self, values: dict[str, Any]) -> int:
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            cur = con.execute(
+                """INSERT INTO classification_rules(project_id,name,condition_type,pattern,action_type,
+                action_value,active,priority,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?,?)""",
+                (
+                    pid,
+                    values["name"],
+                    values["condition_type"],
+                    values["pattern"],
+                    values["action_type"],
+                    values["action_value"],
+                    int(values.get("priority", 100)),
+                    utcnow(),
+                    utcnow(),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def _rule_email_ids(self, con, rule: dict[str, Any]) -> list[int]:
+        fields = {
+            "sender_contains": "lower(e.sender)",
+            "sender_domain": "lower(e.sender)",
+            "subject_contains": "lower(e.subject)",
+            "text_contains": "lower(coalesce(c.clean_text,''))",
+            "attachment_name_contains": "lower(coalesce(a.filename,''))",
+            "attachment_type": "lower(coalesce(a.attachment_type,''))",
+        }
+        field = fields.get(rule["condition_type"])
+        if not field:
+            return []
+        joins = "LEFT JOIN clean_texts c ON c.id=(SELECT max(c2.id) FROM clean_texts c2 WHERE c2.email_id=e.id) LEFT JOIN attachments a ON a.email_id=e.id"
+        rows = con.execute(
+            f"SELECT DISTINCT e.id FROM emails e {joins} WHERE e.project_id=? AND {field} LIKE ?",
+            (rule["project_id"], f"%{rule['pattern'].lower()}%"),
+        )
+        return [int(row[0]) for row in rows]
+
+    def preview_rule(self, rule_id: int) -> dict[str, Any]:
+        with connect(self.db_path) as con:
+            row = con.execute(
+                "SELECT * FROM classification_rules WHERE id=?", (rule_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError("Regola non trovata")
+            ids = self._rule_email_ids(con, dict(row))
+        return {"count": len(ids), "email_ids": ids[:20]}
+
+    def apply_rule(self, rule_id: int) -> int:
+        with connect(self.db_path) as con:
+            row = con.execute(
+                "SELECT * FROM classification_rules WHERE id=?", (rule_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError("Regola non trovata")
+            rule = dict(row)
+            ids = self._rule_email_ids(con, rule)
+            if rule["action_type"] == "area":
+                for email_id in ids:
+                    self._move_email_to_area(con, email_id, rule["action_value"])
+            elif rule["action_type"] == "label":
+                label_id = ReviewRepository(con).add_taxonomy_label(
+                    rule["project_id"], rule["action_value"], "rule"
+                )
+                con.executemany(
+                    "INSERT OR IGNORE INTO email_labels(email_id,label_id,source,created_at) VALUES(?,?,'rule',?)",
+                    [(email_id, label_id, utcnow()) for email_id in ids],
+                )
+            elif rule["action_type"] == "client_or_entity":
+                con.executemany(
+                    """UPDATE operational_contexts SET client_or_entity=?,updated_at=? WHERE id IN
+                    (SELECT operational_context_id FROM email_context_assignments WHERE email_id=? AND review_status!='moved')""",
+                    [(rule["action_value"], utcnow(), email_id) for email_id in ids],
+                )
+        return len(ids)
+
+    def _move_email_to_area(self, con, email_id: int, area: str) -> None:
+        pid = Repository(con).project_id(self.project)
+        row = con.execute(
+            "SELECT id FROM operational_contexts WHERE project_id=? AND macro_category=? AND source='rule' LIMIT 1",
+            (pid, area),
+        ).fetchone()
+        if row:
+            context_id = int(row[0])
+        else:
+            cur = con.execute(
+                """INSERT INTO operational_contexts(project_id,name,description,context_type,macro_category,
+                why_grouped,suggested_user_action,source,confidence,review_status,review_priority,created_at,updated_at)
+                VALUES(?,?,?,'regola',?,?,'Controlla assegnazione','rule',1,'pending',100,?,?)""",
+                (
+                    pid,
+                    f"{area_name(area)} - regole",
+                    "Email assegnate da regole utente",
+                    area,
+                    "Regola confermata dall'utente",
+                    utcnow(),
+                    utcnow(),
+                ),
+            )
+            context_id = int(cur.lastrowid)
+        move_email(con, email_id, context_id)
+
     def export_quality(self) -> dict[str, int]:
         with connect(self.db_path) as con:
             pid = Repository(con).project_id(self.project)
@@ -307,14 +520,114 @@ class UiData:
                 data = json.loads(response.read().decode())
                 result["reachable"] = True
                 result["models"] = data.get("models", [])
-        except (OSError, urllib.error.URLError, ValueError) as exc:
-            result["error"] = str(exc)
+        except (OSError, urllib.error.URLError, ValueError):
+            result["error"] = (
+                f"Ollama non è in esecuzione o non è installato. Il programma ha provato a "
+                f"collegarsi a {cfg.ollama_url} ma non ha ricevuto risposta."
+            )
+        result["selected_model"] = cfg.selected_model or cfg.model
+        result["recommendations"] = self.recommended_models()
         return result
+
+    def recommended_models(self) -> list[dict[str, str]]:
+        specs = {
+            "smollm:135m": (
+                "Ultraleggero / test",
+                "bassa",
+                "alta",
+                "scarso",
+                "Solo verifica hardware",
+            ),
+            "smollm:360m": ("Ultraleggero / test", "bassa", "alta", "scarso", "Test rapidi"),
+            "qwen2.5:0.5b": ("Ultraleggero / test", "bassa", "alta", "discreto", "Prime prove"),
+            "qwen2.5:1.5b": (
+                "Leggero consigliato",
+                "media",
+                "alta",
+                "buono",
+                "Primo test consigliato",
+            ),
+            "gemma3:1b": ("Leggero consigliato", "media", "alta", "discreto", "Sintesi brevi"),
+            "llama3.2:1b": ("Leggero consigliato", "media", "alta", "discreto", "Uso generale"),
+            "smollm:1.7b": (
+                "Leggero consigliato",
+                "media",
+                "media",
+                "discreto",
+                "Hardware limitato",
+            ),
+            "qwen2.5:3b": ("Qualità migliore", "buona", "media", "buono", "Testi tecnici"),
+            "llama3.2:3b": ("Qualità migliore", "buona", "media", "discreto", "Uso generale"),
+            "gemma3:4b": ("Qualità migliore", "buona", "bassa", "buono", "PC più capienti"),
+        }
+        return [
+            {
+                "name": name,
+                "category": values[0],
+                "quality": values[1],
+                "speed": values[2],
+                "italian": values[3],
+                "use": values[4],
+            }
+            for name, values in specs.items()
+        ]
+
+    def pull_model(self, model: str, confirmed: bool) -> dict[str, Any]:
+        allowed = {item["name"] for item in self.recommended_models()}
+        if not confirmed:
+            raise ValueError("Il download richiede una conferma esplicita")
+        if model not in allowed:
+            raise ValueError("Modello non incluso nell'elenco consentito")
+        try:
+            process = subprocess.run(
+                ["ollama", "pull", model], capture_output=True, text=True, timeout=3600, check=False
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("Ollama non è installato o non è disponibile nel PATH") from exc
+        return {"ok": process.returncode == 0, "log": (process.stdout + process.stderr)[-12000:]}
+
+    def test_llm(self, model: str) -> dict[str, Any]:
+        cfg = self.config.local_llm
+        if not cfg.ollama_url.startswith(("http://localhost", "http://127.0.0.1")):
+            raise ValueError("Ollama deve usare localhost")
+        payload = json.dumps(
+            {
+                "model": model,
+                "prompt": "Riassumi in 10 parole: email relative a registri rifiuti Tenax.",
+                "stream": False,
+            }
+        ).encode()
+        request = urllib.request.Request(
+            cfg.ollama_url.rstrip("/") + "/api/generate",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=cfg.timeout_seconds) as response:
+                answer = json.loads(response.read().decode()).get("response", "").strip()
+        except (OSError, urllib.error.URLError, ValueError) as exc:
+            raise RuntimeError(
+                "Il modello non ha risposto. Verifica che Ollama sia avviato e il modello installato."
+            ) from exc
+        if not answer:
+            raise RuntimeError("Il modello ha restituito una risposta vuota")
+        self.save_llm(
+            {"enabled": True, "backend": "ollama", "model": model, "selected_model": model}
+        )
+        return {"ok": True, "answer": answer}
 
     def save_llm(self, values: dict[str, Any]) -> None:
         data = yaml.safe_load(self.config_path.read_text(encoding="utf-8")) or {}
         section = data.setdefault("local_llm", {})
-        for key in ("enabled", "backend", "ollama_url", "model", "model_path", "mode"):
+        for key in (
+            "enabled",
+            "backend",
+            "ollama_url",
+            "model",
+            "selected_model",
+            "model_path",
+            "mode",
+        ):
             if key in values:
                 section[key] = values[key]
         self.config_path.write_text(

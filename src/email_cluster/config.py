@@ -59,12 +59,14 @@ class SweepConfig(BaseModel):
 
 class ClusteringConfig(BaseModel):
     active_profile: str = "balanced"
-    profiles: dict[str, ClusteringProfile] = Field(default_factory=lambda: {
-        "balanced": ClusteringProfile(
-            umap=UmapConfig(n_neighbors=10),
-            hdbscan=HdbscanConfig(min_cluster_size=6, min_samples=3),
-        )
-    })
+    profiles: dict[str, ClusteringProfile] = Field(
+        default_factory=lambda: {
+            "balanced": ClusteringProfile(
+                umap=UmapConfig(n_neighbors=10),
+                hdbscan=HdbscanConfig(min_cluster_size=6, min_samples=3),
+            )
+        }
+    )
     normalize_embeddings: bool = True
     min_cluster_size_absolute: int = 4
     max_noise_ratio_warning: float = 0.60
@@ -81,10 +83,19 @@ class CleaningConfig(BaseModel):
     min_semantic_chars: int = 80
     min_unique_words: int = 8
     max_semantic_chars: int = 12000
-    exclude_message_types: list[str] = Field(default_factory=lambda: [
-        "short_ack", "auto_generated", "pec_receipt", "delivery_notification",
-        "calendar_message", "newsletter", "attachment_only", "forward_only", "low_information",
-    ])
+    exclude_message_types: list[str] = Field(
+        default_factory=lambda: [
+            "short_ack",
+            "auto_generated",
+            "pec_receipt",
+            "delivery_notification",
+            "calendar_message",
+            "newsletter",
+            "attachment_only",
+            "forward_only",
+            "low_information",
+        ]
+    )
     signature_patterns: list[str] = Field(default_factory=list)
     disclaimer_patterns: list[str] = Field(default_factory=list)
     quote_patterns: list[str] = Field(default_factory=list)
@@ -97,11 +108,17 @@ class SemanticPreparationConfig(BaseModel):
     min_unique_words: int = 12
     max_thread_context_chars: int = 1500
     max_attachment_summary_chars: int = 1500
-    exclude_message_types: list[str] = Field(default_factory=lambda: [
-        "auto_generated", "pec_receipt", "delivery_notification", "calendar_message",
-        "newsletter", "personal_or_commercial_notification",
-        "low_information",
-    ])
+    exclude_message_types: list[str] = Field(
+        default_factory=lambda: [
+            "auto_generated",
+            "pec_receipt",
+            "delivery_notification",
+            "calendar_message",
+            "newsletter",
+            "personal_or_commercial_notification",
+            "low_information",
+        ]
+    )
     short_reply_patterns: list[str] = ["ok", "grazie", "perfetto", "ricevuto", "procedi pure"]
     technical_stopwords: list[str] = Field(default_factory=list)
 
@@ -138,9 +155,33 @@ class LocalLlmConfig(BaseModel):
     use_for_taxonomy_suggestion: bool = True
     use_for_split_suggestion: bool = True
     mode: str = "suggestions_only"
-    recommended_models: list[str] = [
-        "qwen2.5:1.5b", "qwen2.5:3b", "llama3.2:3b", "gemma3:1b", "gemma3:4b",
-    ]
+    selected_model: str = ""
+    auto_download_models: bool = False
+    recommended_models: dict[str, list[str]] | list[str] = {
+        "ultralight": ["smollm:135m", "smollm:360m", "qwen2.5:0.5b"],
+        "light": ["qwen2.5:1.5b", "gemma3:1b", "llama3.2:1b", "smollm:1.7b"],
+        "better_quality": ["qwen2.5:3b", "llama3.2:3b", "gemma3:4b"],
+    }
+
+
+class UiConfig(BaseModel):
+    terminology: str = "simple"
+    show_technical_terms: bool = False
+
+
+class VisibleModelConfig(BaseModel):
+    area: str = "Area"
+    set: str = "Insieme"
+    label: str = "Etichetta"
+    topic: str = "Argomento"
+    status: str = "Stato"
+
+
+class ClassificationConfig(BaseModel):
+    visible_model: VisibleModelConfig = Field(default_factory=VisibleModelConfig)
+    allow_user_areas: bool = True
+    allow_user_labels: bool = True
+    allow_rules: bool = True
 
 
 class AppConfig(BaseModel):
@@ -152,9 +193,13 @@ class AppConfig(BaseModel):
     hdbscan: HdbscanConfig = Field(default_factory=HdbscanConfig)
     clustering: ClusteringConfig = Field(default_factory=ClusteringConfig)
     cleaning: CleaningConfig = Field(default_factory=CleaningConfig)
-    semantic_preparation: SemanticPreparationConfig = Field(default_factory=SemanticPreparationConfig)
+    semantic_preparation: SemanticPreparationConfig = Field(
+        default_factory=SemanticPreparationConfig
+    )
     attachments: AttachmentsConfig = Field(default_factory=AttachmentsConfig)
     local_llm: LocalLlmConfig = Field(default_factory=LocalLlmConfig)
+    ui: UiConfig = Field(default_factory=UiConfig)
+    classification: ClassificationConfig = Field(default_factory=ClassificationConfig)
 
 
 def load_config(path: Path | None = None) -> AppConfig:

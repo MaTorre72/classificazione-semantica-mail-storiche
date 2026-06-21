@@ -369,6 +369,27 @@ CREATE TABLE IF NOT EXISTS context_review_events (
     FOREIGN KEY(operational_context_id) REFERENCES operational_contexts(id),
     FOREIGN KEY(email_id) REFERENCES emails(id)
 );
+
+CREATE TABLE IF NOT EXISTS classification_areas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, internal_name TEXT NOT NULL,
+    display_name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#52616d', active INTEGER NOT NULL DEFAULT 1,
+    include_in_report INTEGER NOT NULL DEFAULT 1, is_operational INTEGER NOT NULL DEFAULT 1,
+    review_priority INTEGER NOT NULL DEFAULT 100, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(project_id, internal_name), FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+
+CREATE TABLE IF NOT EXISTS email_labels (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, email_id INTEGER NOT NULL, label_id INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'human', created_at TEXT NOT NULL, UNIQUE(email_id, label_id),
+    FOREIGN KEY(email_id) REFERENCES emails(id), FOREIGN KEY(label_id) REFERENCES taxonomy_labels(id)
+);
+
+CREATE TABLE IF NOT EXISTS classification_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, name TEXT NOT NULL,
+    condition_type TEXT NOT NULL, pattern TEXT NOT NULL, action_type TEXT NOT NULL,
+    action_value TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, priority INTEGER NOT NULL DEFAULT 100,
+    created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id)
+);
 """
 
 
@@ -381,7 +402,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
-    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 4):
+    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 5):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(db_path, db_path.with_suffix(db_path.suffix + f".backup-{timestamp}"))
     with connect(db_path) as con:
@@ -410,7 +431,7 @@ def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
             "recurring_subjects_json": "TEXT", "recurring_senders_json": "TEXT",
             "mean_probability": "REAL", "confidence_label": "REAL",
         })
-        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '4')")
+        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '5')")
 
 
 def _migrate_clean_texts(con: sqlite3.Connection) -> None:
