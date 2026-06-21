@@ -37,6 +37,11 @@ attachments = [
 local-llm = [
     "llama-cpp-python>=0.3",
 ]
+ui = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "jinja2>=3.1",
+]
 
 [project.scripts]
 email-cluster = "email_cluster.cli.app:app"

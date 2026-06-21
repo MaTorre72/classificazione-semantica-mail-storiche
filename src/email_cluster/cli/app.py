@@ -4,6 +4,8 @@ from pathlib import Path
 import json
 import importlib.util
 import platform
+import threading
+import webbrowser
 from itertools import islice, product
 from typing import Annotated
 
@@ -46,6 +48,30 @@ def _db_path(db: Path | None, config_path: Path | None) -> Path:
 def _terminal_safe(value: object) -> str:
     text = "" if value is None else str(value)
     return text.encode("cp1252", errors="replace").decode("cp1252")
+
+
+@app.command("ui")
+def ui(
+    project: Annotated[str, typer.Option("--project")],
+    db: DbOpt = Path("data/email_cluster.sqlite"),
+    config: Annotated[Path, typer.Option("--config")] = Path("config/default.yaml"),
+    host: Annotated[str, typer.Option("--host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port")] = 8765,
+    open_browser: Annotated[bool, typer.Option("--open-browser/--no-open-browser")] = True,
+) -> None:
+    """Avvia la console web locale di classificazione."""
+    try:
+        import uvicorn
+        from email_cluster.ui.app import create_app
+    except ImportError as exc:
+        raise typer.BadParameter("Installa le dipendenze UI con: pip install -e .[ui]") from exc
+    if host not in {"127.0.0.1", "localhost"}:
+        console.print("[yellow]Attenzione: la console sarà accessibile dalla rete.[/yellow]")
+    url = f"http://{host}:{port}"
+    console.print(f"Console locale: {url}")
+    if open_browser:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    uvicorn.run(create_app(db, project, config), host=host, port=port, log_level="warning")
 
 
 @app.command("init-db")

@@ -10,7 +10,7 @@ Tutto resta sul computer: nessuna API cloud, telemetria o invio di email e alleg
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\pip install -e .[dev,ml]
+.\.venv\Scripts\pip install -e .[dev,ml,ui]
 ```
 
 ## Uso normale
@@ -24,13 +24,14 @@ email-cluster run --input mail --project archivio_storico --db data/email_cluste
 Puoi aggiungere nuovi MBOX nella stessa cartella e rilanciare il comando: file ed email già elaborati
 vengono saltati.
 
-### 2. Apri il workbench
+### 2. Apri la console locale
 
 ```powershell
-email-cluster workbench --project archivio_storico --db data/email_cluster.sqlite
+email-cluster ui --project archivio_storico --db data/email_cluster.sqlite
 ```
 
-Mostra stato archivio, macro categorie e **una sola prossima azione consigliata**.
+Si apre su `http://127.0.0.1:8765` e mostra stato archivio, macro-categorie e **una sola prossima
+azione consigliata**. I comandi CLI restano disponibili nella documentazione avanzata.
 
 ### 3. Controlla macro categorie e prossimo contesto
 
@@ -58,14 +59,14 @@ Ogni azione è tracciata e non modifica le run tecniche originali.
 email-cluster export-final --project archivio_storico --db data/email_cluster.sqlite
 ```
 
-## Interfaccia grafica
+## Interfaccia grafica precedente
 
 ```powershell
 email-cluster-gui
 ```
 
-La scheda **Contesti** offre workbench, prossimo contesto, approvazione, rinomina, split, LLM ed export.
-I dettagli di clustering sono nella scheda **Avanzato**.
+La GUI Tkinter resta disponibile per compatibilità. Per il lavoro normale è consigliata la console
+web locale descritta sopra.
 
 ## LLM locale
 
@@ -76,6 +77,8 @@ Il LLM propone nome, sintesi ed email sospette; l'utente mantiene sempre il cont
 ## Documentazione
 
 - [Workflow normale](docs/comandi.md)
+- [Console locale V4](docs/interfaccia_utente.md)
+- [Configurazione LLM locale](docs/llm_locale.md)
 - [Comandi avanzati](docs/avanzato.md)
 - [Contesti operativi V3.1](docs/v3_1_rientro_semplicita_controllo_contesto.md)
 - [Revisione umana e LLM](docs/revisione_umano_llm.md)

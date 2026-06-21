@@ -147,3 +147,5 @@ local_llm:
   use_for_cluster_summary: true
   use_for_taxonomy_suggestion: true
   use_for_split_suggestion: true
+  mode: suggestions_only
+  recommended_models: [qwen2.5:1.5b, qwen2.5:3b, llama3.2:3b, gemma3:1b, gemma3:4b]

@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% block title %}Percorso guidato{% endblock %}{% block content %}<div class="pagehead"><div><h1>Percorso guidato</h1><div class="muted">Dal file sorgente alla classificazione verificata</div></div></div>
+<div class="band steps">{% for s in dashboard.workflow %}<a class="step {{s.status}}" href="/wizard?step={{loop.index}}"><strong>{{loop.index}}. {{s.name}}</strong></a>{% endfor %}</div>
+{% set item=dashboard.workflow[step-1] %}<div class="band"><span class="badge">Passo {{step}} di 6</span><h2>{{item.name}}</h2>
+{% if step==1 %}<p>Importa file EML o MBOX con il comando di pipeline. La console non modifica i file sorgente.</p><div class="code">email-cluster run --project {{project}} --input "C:\percorso\mail" --db "{{db_path}}"</div>
+{% elif step==2 %}<p>La pulizia conserva il testo originale nel database e produce una versione semantica separata.</p><a class="btn" href="/macro">Controlla i risultati</a>
+{% elif step==3 %}<p>Verifica prima la separazione tra posta professionale, personale e automatica.</p><a class="btn primary" href="/macro">Rivedi macro-categorie</a>
+{% elif step==4 %}<p>I contesti raccolgono conversazioni relative allo stesso cliente, pratica o tema operativo.</p><a class="btn primary" href="/contexts">Esplora contesti</a>
+{% elif step==5 %}<p>Approva, rinomina o correggi i contesti. Le modifiche umane restano tracciate.</p><a class="btn primary" href="{{dashboard.next_action.href}}">Continua revisione</a>
+{% else %}<p>Esporta solo dopo aver controllato decisioni pendenti ed email sospette.</p><a class="btn primary" href="/export">Prepara export</a>{% endif %}</div>{% endblock %}

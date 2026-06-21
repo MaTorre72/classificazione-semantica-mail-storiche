@@ -137,6 +137,10 @@ class LocalLlmConfig(BaseModel):
     use_for_cluster_summary: bool = True
     use_for_taxonomy_suggestion: bool = True
     use_for_split_suggestion: bool = True
+    mode: str = "suggestions_only"
+    recommended_models: list[str] = [
+        "qwen2.5:1.5b", "qwen2.5:3b", "llama3.2:3b", "gemma3:1b", "gemma3:4b",
+    ]
 
 
 class AppConfig(BaseModel):
