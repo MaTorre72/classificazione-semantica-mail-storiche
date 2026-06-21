@@ -56,3 +56,54 @@ class OperationalContextSuggestion(BaseModel):
     suggested_user_action: str = "approva"
     suggested_label: str = ""
     confidence: float = 0.0
+
+
+class AreaProposal(BaseModel):
+    name: str
+    description: str = ""
+    operational: bool = True
+    reason: str = ""
+
+
+class AreasSuggestion(BaseModel):
+    areas: list[AreaProposal] = Field(default_factory=list)
+    areas_to_merge: list[list[str]] = Field(default_factory=list)
+    areas_to_rename: list[dict[str, str]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    email_reclassification_proposal: list[dict[str, object]] = Field(default_factory=list)
+
+
+class ClassProposal(BaseModel):
+    name: str
+    description: str = ""
+    reason: str = ""
+
+
+class ClassesSuggestion(BaseModel):
+    classes: list[ClassProposal] = Field(default_factory=list)
+    sets_to_move: list[dict[str, object]] = Field(default_factory=list)
+    emails_to_reclassify: list[int] = Field(default_factory=list)
+
+
+class SetImprovementSuggestion(BaseModel):
+    better_name: str = ""
+    area: str = ""
+    classification_class: str = Field("", alias="class")
+    summary: str = ""
+    why_grouped: str = ""
+    emails_out_of_place: list[int] = Field(default_factory=list)
+    should_split: bool = False
+    split_proposal: list[dict[str, object]] = Field(default_factory=list)
+    merge_candidates: list[int] = Field(default_factory=list)
+    confidence: float = 0.0
+
+
+class EmailClassificationSuggestion(BaseModel):
+    area: str = ""
+    classification_class: str = Field("", alias="class")
+    set_name: str = Field("", alias="set")
+    new_set_needed: bool = False
+    new_set_name: str = ""
+    summary: str = ""
+    reason: str = ""
+    confidence: float = 0.0

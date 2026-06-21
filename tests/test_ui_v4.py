@@ -103,7 +103,7 @@ def test_llm_settings_stay_local(tmp_path: Path) -> None:
 def test_simple_terminology_is_visible(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
     page = client.get("/classification")
-    assert "Area → Insieme → Email" in page.text
+    assert "Area → Classe → Insieme → Email" in page.text
     assert "Classificazione" in page.text
     detail = client.get("/contexts")
     assert "Insiemi" in detail.text
@@ -160,3 +160,38 @@ def test_model_pull_requires_confirmation(tmp_path: Path) -> None:
     response = client.post("/api/llm/pull", json={"model": "qwen2.5:1.5b", "confirmed": False})
     assert response.status_code == 409
     assert "conferma esplicita" in response.json()["detail"]
+
+
+def test_classes_tree_and_archive_page(tmp_path: Path) -> None:
+    client, db = make_client(tmp_path)
+    page = client.get("/classification/classes")
+    assert page.status_code == 200
+    assert "Gestione rifiuti" in page.text
+    with connect(db) as con:
+        area_id = con.execute("SELECT id FROM classification_areas ORDER BY id LIMIT 1").fetchone()[
+            0
+        ]
+    created = client.post(
+        "/api/classification/classes", json={"area_id": area_id, "name": "Classe prova"}
+    )
+    assert created.status_code == 200
+    tree = client.get("/classification")
+    assert "Classe prova" in tree.text
+    archive = client.get("/database")
+    assert archive.status_code == 200
+    assert "Archivio email" in archive.text
+
+
+def test_archive_scan_and_restore_require_confirmation(tmp_path: Path) -> None:
+    client, db = make_client(tmp_path)
+    mail_dir = tmp_path / "mail"
+    mail_dir.mkdir()
+    (mail_dir / "sample.eml").write_text("Subject: Test\n\nMessaggio", encoding="utf-8")
+    scan = client.post("/api/archive/scan", json={"input_path": str(mail_dir)})
+    assert scan.status_code == 200
+    assert scan.json()["files"] == 1
+    backup = client.post("/api/archive/backup", json={}).json()["backup"]
+    denied = client.post(f"/api/archive/restore/{Path(backup).name}", json={"confirmed": False})
+    assert denied.status_code == 409
+    with connect(db) as con:
+        assert con.execute("SELECT count(*) FROM archive_operations").fetchone()[0] >= 1

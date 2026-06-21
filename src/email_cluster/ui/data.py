@@ -2,18 +2,25 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
 from pathlib import Path
+from datetime import datetime
 from typing import Any
 
 import yaml
 
 from email_cluster.config import AppConfig, load_config
+from email_cluster.ingestion.scanner import scan_local_folder
 from email_cluster.llm.prompts import operational_context_prompt
 from email_cluster.llm.review_assistant import validated_suggestion
-from email_cluster.llm.schemas import OperationalContextSuggestion
+from email_cluster.llm.schemas import (
+    AreasSuggestion,
+    ClassesSuggestion,
+    OperationalContextSuggestion,
+)
 from email_cluster.operational.builder import build_operational_contexts
 from email_cluster.operational.export import export_context_report
 from email_cluster.operational.service import (
@@ -63,6 +70,25 @@ class UiData:
                         utcnow(),
                     ),
                 )
+            professional = con.execute(
+                "SELECT id FROM classification_areas WHERE project_id=? AND internal_name='professionale_operativo'",
+                (pid,),
+            ).fetchone()
+            if professional:
+                defaults = [
+                    "Gestione rifiuti",
+                    "Autorizzazioni ambientali",
+                    "Analisi e laboratorio",
+                    "Emissioni in atmosfera",
+                    "VIA / AIA / Seveso",
+                    "Documentazione tecnica",
+                ]
+                for index, name in enumerate(defaults):
+                    con.execute(
+                        """INSERT OR IGNORE INTO classification_classes(project_id,area_id,name,description,active,review_priority,created_at,updated_at)
+                        VALUES(?,?,?,'Classe iniziale modificabile',1,?,?,?)""",
+                        (pid, professional[0], name, 100 - index, utcnow(), utcnow()),
+                    )
 
     def dashboard(self) -> dict[str, Any]:
         self.ensure_contexts()
@@ -320,7 +346,252 @@ class UiData:
                     (pid,),
                 )
             ]
-        return {"areas": areas, "labels": labels, "rules": rules, "sets": self.contexts({})}
+            classes = [
+                dict(row)
+                for row in con.execute(
+                    """SELECT cc.*,ca.display_name area_name,
+                count(DISTINCT oc.id) set_count,count(DISTINCT eca.email_id) email_count
+                FROM classification_classes cc JOIN classification_areas ca ON ca.id=cc.area_id
+                LEFT JOIN operational_contexts oc ON oc.classification_class_id=cc.id AND oc.review_status!='archived'
+                LEFT JOIN email_context_assignments eca ON eca.operational_context_id=oc.id AND eca.review_status NOT IN ('moved','excluded')
+                WHERE cc.project_id=? GROUP BY cc.id ORDER BY ca.review_priority DESC,cc.review_priority DESC""",
+                    (pid,),
+                )
+            ]
+        return {
+            "areas": areas,
+            "classes": classes,
+            "labels": labels,
+            "rules": rules,
+            "sets": self.contexts({}),
+        }
+
+    def classification_tree(self) -> list[dict[str, Any]]:
+        model = self.classification()
+        classes_by_area: dict[int, list[dict[str, Any]]] = {}
+        for item in model["classes"]:
+            item["sets"] = []
+            classes_by_area.setdefault(int(item["area_id"]), []).append(item)
+        unassigned: dict[str, dict[str, Any]] = {}
+        with connect(self.db_path) as con:
+            for item in model["sets"]:
+                item["emails"] = [
+                    dict(row)
+                    for row in con.execute(
+                        """SELECT e.id,e.subject,e.sender FROM email_context_assignments eca
+                    JOIN emails e ON e.id=eca.email_id WHERE eca.operational_context_id=? AND eca.review_status NOT IN ('moved','excluded') ORDER BY e.sent_at DESC LIMIT 8""",
+                        (item["id"],),
+                    )
+                ]
+                target = next(
+                    (x for x in model["classes"] if x["id"] == item.get("classification_class_id")),
+                    None,
+                )
+                if target:
+                    target["sets"].append(item)
+                else:
+                    key = item["macro_category"]
+                    holder = unassigned.setdefault(
+                        key,
+                        {
+                            "id": f"unassigned-{key}",
+                            "name": "Da assegnare a una Classe",
+                            "sets": [],
+                        },
+                    )
+                    holder["sets"].append(item)
+        tree = []
+        for area in model["areas"]:
+            area["classes"] = classes_by_area.get(int(area["id"]), [])
+            if area["internal_name"] in unassigned:
+                area["classes"].append(unassigned[area["internal_name"]])
+            tree.append(area)
+        return tree
+
+    def create_class(self, values: dict[str, Any]) -> int:
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            cur = con.execute(
+                """INSERT INTO classification_classes(project_id,area_id,name,description,active,
+                review_priority,created_at,updated_at) VALUES(?,?,?,?,1,?,?,?)""",
+                (
+                    pid,
+                    int(values["area_id"]),
+                    values["name"].strip(),
+                    values.get("description", ""),
+                    int(values.get("review_priority", 100)),
+                    utcnow(),
+                    utcnow(),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def update_class(self, class_id: int, values: dict[str, Any]) -> None:
+        allowed = {"name", "description", "active", "area_id", "review_priority"}
+        changes = {key: values[key] for key in allowed if key in values}
+        if changes:
+            with connect(self.db_path) as con:
+                columns = ",".join(f"{key}=?" for key in changes)
+                con.execute(
+                    f"UPDATE classification_classes SET {columns},updated_at=? WHERE id=?",
+                    (*changes.values(), utcnow(), class_id),
+                )
+
+    def create_set(self, values: dict[str, Any]) -> int:
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            area = con.execute(
+                "SELECT internal_name FROM classification_areas WHERE id=?",
+                (int(values["area_id"]),),
+            ).fetchone()
+            cur = con.execute(
+                """INSERT INTO operational_contexts(project_id,name,description,context_type,macro_category,
+                classification_class_id,client_or_entity,technical_domain,why_grouped,suggested_user_action,source,
+                confidence,review_status,review_priority,created_at,updated_at) VALUES(?,?,?,'manuale',?,?,?,?,
+                'Creato manualmente','Aggiungi email','human',1,'pending',100,?,?)""",
+                (
+                    pid,
+                    values["name"].strip(),
+                    values.get("description", ""),
+                    area[0],
+                    values.get("class_id"),
+                    values.get("client_or_entity", ""),
+                    values.get("topic", ""),
+                    utcnow(),
+                    utcnow(),
+                ),
+            )
+            return int(cur.lastrowid)
+
+    def update_set_structure(self, set_id: int, values: dict[str, Any]) -> None:
+        allowed = {
+            "name",
+            "classification_class_id",
+            "client_or_entity",
+            "technical_domain",
+            "review_status",
+            "human_notes",
+        }
+        changes = {key: values[key] for key in allowed if key in values}
+        with connect(self.db_path) as con:
+            if "area_id" in values:
+                area = con.execute(
+                    "SELECT internal_name FROM classification_areas WHERE id=?",
+                    (int(values["area_id"]),),
+                ).fetchone()
+                changes["macro_category"] = area[0]
+            if changes:
+                columns = ",".join(f"{key}=?" for key in changes)
+                con.execute(
+                    f"UPDATE operational_contexts SET {columns},source='human',updated_at=? WHERE id=?",
+                    (*changes.values(), utcnow(), set_id),
+                )
+
+    def archive_status(self, input_path: Path | None = None) -> dict[str, Any]:
+        path = input_path or self.config.input.path
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            total = con.execute(
+                "SELECT count(*) FROM emails WHERE project_id=?", (pid,)
+            ).fetchone()[0]
+            sources = con.execute(
+                "SELECT count(*) FROM source_files WHERE project_id=?", (pid,)
+            ).fetchone()[0]
+            duplicates = con.execute(
+                "SELECT coalesce(sum(emails_found-emails_imported),0) FROM source_files WHERE project_id=?",
+                (pid,),
+            ).fetchone()[0]
+            errors = con.execute(
+                "SELECT count(*) FROM errors WHERE project_id=?", (pid,)
+            ).fetchone()[0]
+            latest = con.execute(
+                "SELECT max(imported_at) FROM source_files WHERE project_id=?", (pid,)
+            ).fetchone()[0]
+        candidates = scan_local_folder(path) if path.exists() else []
+        backups = sorted(self.db_path.parent.glob(self.db_path.name + ".backup-*"), reverse=True)
+        return {
+            "database": str(self.db_path),
+            "input_path": str(path),
+            "total": total,
+            "sources": sources,
+            "duplicates": duplicates,
+            "errors": errors,
+            "latest": latest,
+            "files_found": len(candidates),
+            "backups": [
+                {"name": item.name, "path": str(item), "size": item.stat().st_size}
+                for item in backups[:20]
+            ],
+        }
+
+    def scan_archive(self, input_path: Path) -> dict[str, Any]:
+        if not input_path.exists() or not input_path.is_dir():
+            raise ValueError("La cartella indicata non esiste o non è accessibile")
+        candidates = scan_local_folder(input_path)
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            known = {
+                row["path"]: row["file_hash"]
+                for row in con.execute(
+                    "SELECT path,file_hash FROM source_files WHERE project_id=?", (pid,)
+                )
+            }
+        new = sum(str(item.path.resolve()) not in known for item in candidates)
+        return {"files": len(candidates), "new_files": new, "path": str(input_path)}
+
+    def create_backup(self, reason: str = "manuale") -> Path:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        output = self.db_path.with_suffix(self.db_path.suffix + f".backup-{stamp}")
+        shutil.copy2(self.db_path, output)
+        with connect(self.db_path) as con:
+            pid = Repository(con).project_id(self.project)
+            con.execute(
+                "INSERT INTO archive_operations(project_id,operation,status,details_json,backup_path,created_at,completed_at) VALUES(?,'backup','completed',?,?,?,?)",
+                (
+                    pid,
+                    json.dumps({"reason": reason}, ensure_ascii=False),
+                    str(output),
+                    utcnow(),
+                    utcnow(),
+                ),
+            )
+        return output
+
+    def restore_backup(self, backup_name: str, confirmed: bool) -> None:
+        if not confirmed:
+            raise ValueError("Il ripristino richiede conferma esplicita")
+        source = self.db_path.parent / Path(backup_name).name
+        if not source.exists() or not source.name.startswith(self.db_path.name + ".backup-"):
+            raise ValueError("Backup non valido")
+        self.create_backup("prima del ripristino")
+        shutil.copy2(source, self.db_path)
+
+    def run_archive_action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
+        from email_cluster.cli.app import clean, import_emails, prepare_context
+
+        path = Path(values.get("input_path") or self.config.input.path)
+        risky = action in {"reimport", "regenerate_classification", "delete_processing"}
+        if risky and not values.get("confirmed"):
+            raise ValueError("Questa operazione richiede conferma esplicita")
+        backup = self.create_backup(f"prima di {action}") if risky else None
+        if action == "import_new":
+            import_emails(
+                source=path, project=self.project, db=self.db_path, config=self.config_path
+            )
+        elif action == "clean":
+            clean(project=self.project, db=self.db_path, config=self.config_path)
+            prepare_context(project=self.project, db=self.db_path, config=self.config_path)
+        elif action == "regenerate_classification":
+            self.ensure_contexts()
+        elif action == "backup":
+            backup = self.create_backup("richiesto dall'utente")
+        else:
+            raise ValueError("Operazione non supportata dalla console")
+        return {
+            "ok": True,
+            "backup": str(backup) if backup else None,
+            "status": self.archive_status(path),
+        }
 
     def create_area(self, values: dict[str, Any]) -> None:
         display = values["display_name"].strip()
@@ -743,6 +1014,52 @@ class UiData:
             "input": prompt,
             "model": cfg.model or cfg.model_path,
             "suggestion": suggestion.model_dump(),
+        }
+
+    def classification_ai_suggestion(
+        self, kind: str, target_id: int | None = None
+    ) -> dict[str, Any]:
+        model = self.classification()
+        if kind == "areas":
+            payload = {
+                "areas": model["areas"],
+                "sets": [
+                    {"name": x["name"], "area": x["macro_category"], "emails": x["email_count"]}
+                    for x in model["sets"][:80]
+                ],
+            }
+            schema = AreasSuggestion
+            instruction = "Proponi una struttura di Aree semplice. Restituisci JSON con areas, areas_to_merge, areas_to_rename, warnings, email_reclassification_proposal."
+        elif kind == "classes":
+            area = next(
+                (x for x in model["areas"] if int(x["id"]) == int(target_id or 0)),
+                model["areas"][0],
+            )
+            payload = {
+                "area": area,
+                "classes": [x for x in model["classes"] if x["area_id"] == area["id"]],
+                "sets": [x for x in model["sets"] if x["macro_category"] == area["internal_name"]][
+                    :80
+                ],
+            }
+            schema = ClassesSuggestion
+            instruction = "Proponi Classi operative per questa Area. Restituisci JSON con classes, sets_to_move, emails_to_reclassify."
+        else:
+            raise ValueError("Tipo di suggerimento AI non supportato")
+        prompt = (
+            instruction
+            + "\nDati locali:\n"
+            + json.dumps(payload, ensure_ascii=False, default=str)[
+                : self.config.local_llm.max_input_chars
+            ]
+        )
+        with connect(self.db_path) as con:
+            suggestion = validated_suggestion(con, prompt, schema, self.config.local_llm)
+        return {
+            "kind": kind,
+            "model": self.config.local_llm.selected_model or self.config.local_llm.model,
+            "suggestion": suggestion.model_dump(by_alias=True),
+            "requires_confirmation": True,
         }
 
     def accept_llm_suggestion(

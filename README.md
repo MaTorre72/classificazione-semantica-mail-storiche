@@ -30,7 +30,7 @@ vengono saltati.
 email-cluster ui --project archivio_storico --db data/email_cluster.sqlite
 ```
 
-Si apre su `http://127.0.0.1:8765` e mostra stato archivio, Aree e **una sola prossima
+Si apre su `http://127.0.0.1:8765` e mostra stato archivio, struttura **Area → Classe → Insieme → Email** e **una sola prossima
 azione consigliata**. I comandi CLI restano disponibili nella documentazione avanzata.
 
 ### 3. Controlla Aree e prossimo Insieme
@@ -81,6 +81,7 @@ Il LLM propone nome, sintesi ed email sospette; l'utente mantiene sempre il cont
 - [Configurazione LLM locale](docs/llm_locale.md)
 - [Comandi avanzati](docs/avanzato.md)
 - [Gestire la classificazione](docs/classificazione.md)
+- [UX gerarchica, archivio e assistente AI](docs/ux_classi_archivio_ai.md)
 - [Modelli LLM leggeri](docs/llm_leggeri.md)
 - [Termini tecnici avanzati](docs/avanzato_termini_tecnici.md)
 - [Revisione umana e LLM](docs/revisione_umano_llm.md)

@@ -1,9 +1,10 @@
 # Classificazione
 
-La classificazione segue tre livelli: **Area -> Insieme -> Email**.
+La classificazione segue quattro livelli: **Area -> Classe -> Insieme -> Email**.
 
-La pagina **Classificazione** permette di creare, rinominare e disattivare Aree; scegliere colore,
-priorità, presenza nel report e natura operativa; creare e rinominare Etichette; definire Regole.
+La pagina **Classificazione** permette di creare, rinominare e disattivare Aree; creare Classi dentro
+le Aree; creare e spostare Insiemi; aprire le singole Email. Etichette e Regole restano strumenti
+avanzati e non sono livelli della struttura principale.
 
 Una Regola cerca un valore in mittente, oggetto, testo o allegato e assegna un'Area, un'Etichetta o
 un Cliente / Ente. Prima dell'applicazione viene mostrato il numero di email interessate. Soltanto

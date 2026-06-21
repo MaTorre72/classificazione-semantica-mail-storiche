@@ -87,7 +87,31 @@ def create_app(
 
     @app.get("/classification", response_class=HTMLResponse)
     def classification(request: Request):
-        return page(request, "classification.html", **data.classification())
+        return page(
+            request,
+            "classification.html",
+            section="structure",
+            tree=data.classification_tree(),
+            **data.classification(),
+        )
+
+    @app.get("/classification/{section}", response_class=HTMLResponse)
+    def classification_section(request: Request, section: str):
+        allowed = {"structure", "areas", "classes", "sets", "emails", "ai", "advanced"}
+        if section not in allowed:
+            raise HTTPException(404, "Sezione non trovata")
+        return page(
+            request,
+            "classification.html",
+            section=section,
+            tree=data.classification_tree(),
+            **data.classification(),
+        )
+
+    @app.get("/database", response_class=HTMLResponse)
+    def database_page(request: Request, input_path: str = ""):
+        path = Path(input_path) if input_path else None
+        return page(request, "database.html", archive=data.archive_status(path))
 
     @app.get("/export", response_class=HTMLResponse)
     def export_page(request: Request):
@@ -148,6 +172,24 @@ def create_app(
         data.update_area(area_id, await request.json())
         return {"ok": True}
 
+    @app.post("/api/classification/classes")
+    async def class_create(request: Request):
+        return {"ok": True, "id": data.create_class(await request.json())}
+
+    @app.post("/api/classification/classes/{class_id}")
+    async def class_update(class_id: int, request: Request):
+        data.update_class(class_id, await request.json())
+        return {"ok": True}
+
+    @app.post("/api/classification/sets")
+    async def set_create(request: Request):
+        return {"ok": True, "id": data.create_set(await request.json())}
+
+    @app.post("/api/classification/sets/{set_id}")
+    async def set_update(set_id: int, request: Request):
+        data.update_set_structure(set_id, await request.json())
+        return {"ok": True}
+
     @app.post("/api/classification/labels")
     async def label_create(request: Request):
         data.create_label(await request.json())
@@ -169,6 +211,38 @@ def create_app(
     @app.post("/api/classification/rules/{rule_id}/apply")
     def rule_apply(rule_id: int):
         return {"ok": True, "count": data.apply_rule(rule_id)}
+
+    @app.post("/api/classification/ai/{kind}")
+    async def classification_ai(kind: str, request: Request):
+        values = await request.json()
+        try:
+            return data.classification_ai_suggestion(kind, values.get("target_id"))
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/archive/scan")
+    async def archive_scan(request: Request):
+        values = await request.json()
+        try:
+            return data.scan_archive(Path(values["input_path"]))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/archive/{action}")
+    async def archive_action(action: str, request: Request):
+        try:
+            return data.run_archive_action(action, await request.json())
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/archive/restore/{backup_name}")
+    async def archive_restore(backup_name: str, request: Request):
+        values = await request.json()
+        try:
+            data.restore_backup(backup_name, bool(values.get("confirmed")))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return {"ok": True}
 
     @app.post("/api/contexts/{context_id}/llm-suggest")
     def llm_suggest(context_id: int):

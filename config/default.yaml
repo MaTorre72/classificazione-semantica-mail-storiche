@@ -184,10 +184,10 @@ attachments:
   enable_xlsx: true
   enable_ocr: false
 local_llm:
-  enabled: false
+  enabled: true
   backend: ollama
   ollama_url: http://localhost:11434
-  model: ''
+  model: qwen2.5:1.5b
   model_path: ''
   max_input_chars: 6000
   max_output_tokens: 512
@@ -205,7 +205,7 @@ local_llm:
   use_for_taxonomy_suggestion: true
   use_for_split_suggestion: true
   mode: suggestions_only
-  selected_model: ''
+  selected_model: qwen2.5:1.5b
   auto_download_models: false
   recommended_models:
     ultralight:

@@ -390,6 +390,21 @@ CREATE TABLE IF NOT EXISTS classification_rules (
     action_value TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, priority INTEGER NOT NULL DEFAULT 100,
     created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id)
 );
+
+CREATE TABLE IF NOT EXISTS classification_classes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, area_id INTEGER NOT NULL,
+    name TEXT NOT NULL, description TEXT, active INTEGER NOT NULL DEFAULT 1,
+    review_priority INTEGER NOT NULL DEFAULT 100, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(project_id, area_id, name), FOREIGN KEY(project_id) REFERENCES projects(id),
+    FOREIGN KEY(area_id) REFERENCES classification_areas(id)
+);
+
+CREATE TABLE IF NOT EXISTS archive_operations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER, operation TEXT NOT NULL,
+    status TEXT NOT NULL, impact_count INTEGER NOT NULL DEFAULT 0, details_json TEXT,
+    backup_path TEXT, created_at TEXT NOT NULL, completed_at TEXT,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
 """
 
 
@@ -402,36 +417,80 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
-    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 5):
+    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 6):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(db_path, db_path.with_suffix(db_path.suffix + f".backup-{timestamp}"))
     with connect(db_path) as con:
         con.executescript(SCHEMA_SQL)
         _migrate_clean_texts(con)
-        _migrate_table(con, "source_files", {
-            "file_size": "INTEGER", "modified_at": "TEXT", "emails_found": "INTEGER DEFAULT 0",
-            "emails_imported": "INTEGER DEFAULT 0", "errors_count": "INTEGER DEFAULT 0",
-        })
+        _migrate_table(
+            con,
+            "source_files",
+            {
+                "file_size": "INTEGER",
+                "modified_at": "TEXT",
+                "emails_found": "INTEGER DEFAULT 0",
+                "emails_imported": "INTEGER DEFAULT 0",
+                "errors_count": "INTEGER DEFAULT 0",
+            },
+        )
         _migrate_table(con, "emails", {"import_run_id": "INTEGER", "thread_key": "TEXT"})
-        _migrate_table(con, "attachments", {
-            "attachment_type": "TEXT", "attachment_keywords_json": "TEXT", "text_excerpt": "TEXT",
-            "extraction_error": "TEXT", "created_at": "TEXT",
-        })
-        _migrate_table(con, "clustering_runs", {
-            "profile_name": "TEXT", "total_emails_considered": "INTEGER", "excluded_before_clustering": "INTEGER",
-            "total_clusters": "INTEGER", "total_noise": "INTEGER", "noise_ratio": "REAL",
-            "largest_cluster_size": "INTEGER", "largest_cluster_ratio": "REAL", "median_cluster_size": "REAL",
-            "mean_cluster_size": "REAL", "min_cluster_size": "INTEGER", "max_cluster_size": "INTEGER",
-            "number_of_small_clusters": "INTEGER", "number_of_large_clusters": "INTEGER",
-            "silhouette_score": "REAL", "davies_bouldin_score": "REAL", "calinski_harabasz_score": "REAL",
-            "mean_cluster_probability": "REAL", "low_confidence_assignments": "INTEGER",
-            "random_state": "INTEGER", "warnings_json": "TEXT",
-        })
-        _migrate_table(con, "clusters", {
-            "recurring_subjects_json": "TEXT", "recurring_senders_json": "TEXT",
-            "mean_probability": "REAL", "confidence_label": "REAL",
-        })
-        con.execute("INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '5')")
+        _migrate_table(
+            con,
+            "attachments",
+            {
+                "attachment_type": "TEXT",
+                "attachment_keywords_json": "TEXT",
+                "text_excerpt": "TEXT",
+                "extraction_error": "TEXT",
+                "created_at": "TEXT",
+            },
+        )
+        _migrate_table(
+            con,
+            "clustering_runs",
+            {
+                "profile_name": "TEXT",
+                "total_emails_considered": "INTEGER",
+                "excluded_before_clustering": "INTEGER",
+                "total_clusters": "INTEGER",
+                "total_noise": "INTEGER",
+                "noise_ratio": "REAL",
+                "largest_cluster_size": "INTEGER",
+                "largest_cluster_ratio": "REAL",
+                "median_cluster_size": "REAL",
+                "mean_cluster_size": "REAL",
+                "min_cluster_size": "INTEGER",
+                "max_cluster_size": "INTEGER",
+                "number_of_small_clusters": "INTEGER",
+                "number_of_large_clusters": "INTEGER",
+                "silhouette_score": "REAL",
+                "davies_bouldin_score": "REAL",
+                "calinski_harabasz_score": "REAL",
+                "mean_cluster_probability": "REAL",
+                "low_confidence_assignments": "INTEGER",
+                "random_state": "INTEGER",
+                "warnings_json": "TEXT",
+            },
+        )
+        _migrate_table(
+            con,
+            "clusters",
+            {
+                "recurring_subjects_json": "TEXT",
+                "recurring_senders_json": "TEXT",
+                "mean_probability": "REAL",
+                "confidence_label": "REAL",
+            },
+        )
+        _migrate_table(
+            con,
+            "operational_contexts",
+            {"classification_class_id": "INTEGER", "human_notes": "TEXT"},
+        )
+        con.execute(
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '6')"
+        )
 
 
 def _migrate_clean_texts(con: sqlite3.Connection) -> None:
