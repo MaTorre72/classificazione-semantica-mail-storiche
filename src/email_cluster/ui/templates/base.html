@@ -9,6 +9,6 @@
 </nav></aside><main class="main"><header class="topbar"><span>Console locale di classificazione</span><span class="badge">127.0.0.1 · dati locali</span></header><section class="content">{% block content %}{% endblock %}</section></main></div><div id="toast" class="toast"></div>
 <script>
 function toast(msg){const el=document.getElementById('toast');el.textContent=msg;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2800)}
-async function api(url,data={}){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const out=await r.json();if(!r.ok)throw new Error(out.error||'Operazione non riuscita');return out}
+async function api(url,data={}){const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const raw=await r.text();let out;try{out=raw?JSON.parse(raw):{}}catch(_){out={detail:raw||'Risposta non leggibile dal server'}}if(!r.ok)throw new Error(out.detail||out.error||'Operazione non riuscita');return out}
 async function act(url,data,msg,reload=true){try{await api(url,data);toast(msg);if(reload)setTimeout(()=>location.reload(),450)}catch(e){toast(e.message)}}
 </script>{% block scripts %}{% endblock %}</body></html>

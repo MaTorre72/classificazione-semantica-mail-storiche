@@ -1,9 +1,12 @@
 from pathlib import Path
 
 import yaml
+import pytest
 from fastapi.testclient import TestClient
 
 from email_cluster.operational.builder import build_operational_contexts
+from email_cluster.config import LocalLlmConfig
+from email_cluster.llm.client import LocalLlmClient
 from email_cluster.storage.database import connect
 from email_cluster.ui.app import create_app
 from tests.test_review_v3 import make_review_db
@@ -195,3 +198,37 @@ def test_archive_scan_and_restore_require_confirmation(tmp_path: Path) -> None:
     assert denied.status_code == 409
     with connect(db) as con:
         assert con.execute("SELECT count(*) FROM archive_operations").fetchone()[0] >= 1
+
+
+def test_llm_timeout_is_translated_for_user(monkeypatch) -> None:
+    def timeout(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("urllib.request.urlopen", timeout)
+    client = LocalLlmClient(
+        LocalLlmConfig(
+            enabled=True,
+            backend="ollama",
+            model="qwen2.5:1.5b",
+            timeout_seconds=3,
+        )
+    )
+    with pytest.raises(RuntimeError, match="non ha risposto entro 3 secondi"):
+        client.generate_json("prova")
+
+
+def test_llm_free_text_response_is_rejected_cleanly(monkeypatch) -> None:
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self):
+            return b'{"response":"Internal Server Error"}'
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: Response())
+    client = LocalLlmClient(LocalLlmConfig(enabled=True, backend="ollama", model="qwen"))
+    with pytest.raises(RuntimeError, match="testo libero"):
+        client.generate_json("prova")

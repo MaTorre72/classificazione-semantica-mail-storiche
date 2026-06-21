@@ -151,7 +151,7 @@ def create_app(
         values = await request.json()
         try:
             return data.pull_model(values["model"], bool(values.get("confirmed")))
-        except (ValueError, RuntimeError) as exc:
+        except (ValueError, RuntimeError, TimeoutError, OSError) as exc:
             raise HTTPException(409, str(exc)) from exc
 
     @app.post("/api/llm/test")
@@ -217,7 +217,7 @@ def create_app(
         values = await request.json()
         try:
             return data.classification_ai_suggestion(kind, values.get("target_id"))
-        except (ValueError, RuntimeError) as exc:
+        except (ValueError, RuntimeError, TimeoutError, OSError) as exc:
             raise HTTPException(409, str(exc)) from exc
 
     @app.post("/api/archive/scan")
