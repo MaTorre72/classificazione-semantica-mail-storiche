@@ -248,6 +248,10 @@ def build_conversations(
         for item in conversation_examples
         if item["method"] == "isolated" and len(item["subject"]) >= 8
     ][:10]
+    isolated_examples = [item for item in conversation_examples if item["method"] == "isolated"][
+        :20
+    ]
+    multi_message_examples = [item for item in conversation_examples if item["messages"] > 1][:20]
     result = {
         "project": project,
         "emails": len(rows),
@@ -261,6 +265,24 @@ def build_conversations(
         "fallback_links": fallback_links,
         "generic_subject_messages_excluded_from_fallback": generic_subjects_skipped,
         "mean_messages": round(len(rows) / max(len(groups), 1), 2),
+        "reconstruction_quality": {
+            "multi_message": len(groups) - isolated,
+            "isolated_percent": round(isolated * 100 / max(len(groups), 1), 1),
+            "header_based": header_conversations,
+            "fallback_based": fallback_conversations,
+            "low_confidence": low_confidence,
+        },
+        "isolated_conversations": isolated_examples,
+        "multi_message_conversations": multi_message_examples,
+        "fallback_conversations": [
+            item for item in conversation_examples if item["method"] == "subject_participants_date"
+        ][:20],
+        "examples_to_verify": possible_false_positives + possible_broken_threads,
+        "possible_fragility_causes": [
+            "Posta inviata non importata.",
+            "Header References o In-Reply-To mancanti.",
+            "Raggruppamento prudente per evitare falsi positivi.",
+        ],
         "long_conversation_examples": long_examples,
         "possible_false_positives": possible_false_positives,
         "possible_broken_threads": possible_broken_threads,

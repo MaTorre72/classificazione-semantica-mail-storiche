@@ -23,6 +23,7 @@ def create_app(
         term=lambda key: TERMS[key], area_name=area_name, status_name=status_name
     )
     app.state.data = data
+    app.state.atlas = atlas
 
     def page(request: Request, template: str, **context: Any) -> HTMLResponse:
         base = {
@@ -43,7 +44,25 @@ def create_app(
 
     @app.get("/atlas/conversations", response_class=HTMLResponse)
     def atlas_conversations(request: Request):
-        return page(request, "atlas_conversations.html", conversations=atlas.conversations())
+        summary = atlas.conversation_summary()
+        return page(
+            request,
+            "atlas_conversations.html",
+            summary=summary,
+            quality=atlas.conversation_quality(summary),
+            groups=atlas.conversation_groups(),
+        )
+
+    @app.get("/atlas/conversations/{conversation_id}", response_class=HTMLResponse)
+    def atlas_conversation_detail(request: Request, conversation_id: int):
+        try:
+            return page(
+                request,
+                "atlas_conversation_detail.html",
+                **atlas.conversation_detail(conversation_id),
+            )
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     @app.get("/atlas/review", response_class=HTMLResponse)
     def atlas_review(request: Request):
@@ -56,7 +75,7 @@ def create_app(
         try:
             results = atlas.search(query) if query else []
             error = ""
-        except (ValueError, RuntimeError, Exception) as exc:  # FTS errors become user guidance.
+        except Exception as exc:  # FTS errors become user guidance.
             results, error = [], str(exc)
         return page(request, "atlas_search.html", query=query, results=results, error=error)
 

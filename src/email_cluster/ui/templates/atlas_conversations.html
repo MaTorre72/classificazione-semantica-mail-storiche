@@ -1,17 +1,16 @@
-{% extends "base.html" %}
-{% block title %}Conversazioni - Email Atlas{% endblock %}
-{% block content %}
-<section class="page-heading">
-  <p class="eyebrow">Verifica intermedia</p>
-  <h1>Conversazioni ricostruite</h1>
-  <p>Controlla come i messaggi sono stati collegati. I riferimenti espliciti sono più affidabili del raggruppamento di fallback.</p>
-</section>
-<section class="panel">
-  <div class="panel-header"><h2>{{ conversations|length }} conversazioni</h2><a href="/atlas/reports/conversation_report.html">Apri il report</a></div>
-  {% if conversations %}
-  <div class="table-wrap"><table><thead><tr><th>Oggetto</th><th>Messaggi</th><th>Periodo</th><th>Metodo</th><th>Confidenza</th></tr></thead><tbody>
-  {% for item in conversations %}<tr><td>{{ item.subject or "Senza oggetto" }}</td><td>{{ item.message_count }}</td><td>{{ item.first_date or "-" }}<br>{{ item.last_date or "-" }}</td><td>{{ item.method }}</td><td>{{ item.confidence }}</td></tr>{% endfor %}
-  </tbody></table></div>
-  {% else %}<p>Nessuna conversazione disponibile. Esegui prima parsing e ricostruzione conversazioni.</p>{% endif %}
-</section>
+{% extends "base.html" %}{% block title %}Verifica conversazioni - Email Atlas{% endblock %}{% block content %}
+<div class="pagehead"><div><h1>Verifica Conversazioni</h1><div class="muted">Controlla se i collegamenti tra messaggi sono credibili prima di proseguire.</div></div><a class="btn" href="/atlas/reports/conversation_report.html">Apri report completo</a></div>
+<div class="band {{ 'danger' if quality.judgement=='Fragile' else 'next' }}"><div><strong>Giudizio: {{quality.judgement}}</strong><div>{% if quality.judgement=='Fragile' %}La ricostruzione richiede controllo prima della discovery.{% else %}Esamina comunque un campione rappresentativo.{% endif %}</div></div></div>
+<div class="grid g4">
+{% for value,label in [(summary.emails,'Email'),(summary.conversations,'Conversazioni'),(summary.isolated,'Isolate'),(summary.multi_message,'Multi-messaggio'),(summary.incoming,'Ricevute'),(summary.outgoing,'Inviate'),(summary.header_based,'Da header'),(summary.fallback_based,'Da fallback'),(summary.low_confidence,'Bassa affidabilita'),(summary.with_warnings,'Con warning')] %}<div class="panel metric"><strong>{{value}}</strong><span>{{label}}</span></div>{% endfor %}
+</div>
+{% if summary.isolated_percent > 50 %}<div class="band danger"><strong>Molte conversazioni contengono un solo messaggio ({{summary.isolated_percent}}%).</strong><div>E possibile che manchi la posta inviata, che gli header di risposta siano assenti o che il raggruppamento sia troppo prudente.</div></div>{% endif %}
+<section class="panel"><h2>Azioni consigliate</h2><ul>{% for action in quality.actions %}<li>{{action}}</li>{% endfor %}</ul></section>
+{% macro conversation_table(title, rows) %}<section class="panel"><div class="pagehead"><h2>{{title}}</h2><span class="badge">{{rows|length}}</span></div>{% if rows %}<div class="table-wrap"><table><thead><tr><th>ID / oggetto</th><th>Messaggi</th><th>Periodo</th><th>Partecipanti</th><th>Metodo</th><th>Affidabilita</th><th>Warning</th><th></th></tr></thead><tbody>{% for item in rows %}<tr class="{{'pending' if item.confidence < 0.7 else ''}}"><td><strong>#{{item.id}}</strong><br>{{item.subject_normalized or 'Senza oggetto'}}</td><td>{{item.message_count}}<br><small>{{item.incoming_count}} ricevute / {{item.outgoing_count}} inviate</small></td><td>{{item.date_start or '-'}}<br>{{item.date_end or '-'}}</td><td>{{item.participants[:3]|join(', ') or '-'}}</td><td>{{item.method_label}}</td><td>{{(item.confidence*100)|round|int}}%</td><td>{{item.warnings|join('; ') or '-'}}</td><td><a class="btn" href="/atlas/conversations/{{item.id}}">Apri dettaglio</a></td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">Nessun elemento in questa sezione.</p>{% endif %}</section>{% endmacro %}
+{{ conversation_table('Conversazioni da controllare', groups.to_check) }}
+{{ conversation_table('Conversazioni lunghe', groups.long) }}
+{{ conversation_table('Ricostruite da header', groups.headers) }}
+{{ conversation_table('Ricostruite da fallback', groups.fallback) }}
+{{ conversation_table('Conversazioni isolate', groups.isolated) }}
+{{ conversation_table('Conversazioni con warning', groups.warnings) }}
 {% endblock %}
