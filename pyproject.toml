@@ -46,6 +46,7 @@ ui = [
 [project.scripts]
 email-cluster = "email_cluster.cli.app:app"
 email-cluster-gui = "email_cluster.gui.app:main"
+email-atlas = "email_cluster.atlas.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]

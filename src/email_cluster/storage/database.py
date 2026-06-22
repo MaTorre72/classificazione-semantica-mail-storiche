@@ -405,6 +405,81 @@ CREATE TABLE IF NOT EXISTS archive_operations (
     backup_path TEXT, created_at TEXT NOT NULL, completed_at TEXT,
     FOREIGN KEY(project_id) REFERENCES projects(id)
 );
+
+CREATE TABLE IF NOT EXISTS atlas_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER, job_type TEXT NOT NULL,
+    status TEXT NOT NULL, parameters_json TEXT, checkpoint_json TEXT, started_at TEXT NOT NULL,
+    completed_at TEXT, error TEXT, UNIQUE(project_id,job_type,status),
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, stable_key TEXT NOT NULL,
+    subject_normalized TEXT, date_start TEXT, date_end TEXT, message_count INTEGER NOT NULL DEFAULT 0,
+    incoming_count INTEGER NOT NULL DEFAULT 0, outgoing_count INTEGER NOT NULL DEFAULT 0,
+    attachments_count INTEGER NOT NULL DEFAULT 0, participants_json TEXT, unique_clean_text TEXT,
+    analysis_text TEXT, confidence REAL NOT NULL DEFAULT 0, reconstruction_method TEXT NOT NULL,
+    warnings_json TEXT, status TEXT NOT NULL DEFAULT 'automatic', created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL, UNIQUE(project_id,stable_key), FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_conversation_messages (
+    conversation_id INTEGER NOT NULL, email_id INTEGER NOT NULL, position INTEGER NOT NULL,
+    relation_method TEXT NOT NULL, relation_confidence REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY(conversation_id,email_id), FOREIGN KEY(conversation_id) REFERENCES atlas_conversations(id),
+    FOREIGN KEY(email_id) REFERENCES emails(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_entities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, entity_type TEXT NOT NULL,
+    normalized_name TEXT NOT NULL, display_name TEXT NOT NULL, frequency INTEGER NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'automatic', confidence REAL NOT NULL DEFAULT 0,
+    metadata_json TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    UNIQUE(project_id,entity_type,normalized_name), FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_entity_mentions (
+    entity_id INTEGER NOT NULL, email_id INTEGER, conversation_id INTEGER, evidence TEXT,
+    created_at TEXT NOT NULL, UNIQUE(entity_id,email_id,conversation_id,evidence),
+    FOREIGN KEY(entity_id) REFERENCES atlas_entities(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_semantic_documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, document_level TEXT NOT NULL,
+    source_id INTEGER NOT NULL, version TEXT NOT NULL, content_hash TEXT NOT NULL, content TEXT NOT NULL,
+    metadata_json TEXT, created_at TEXT NOT NULL, UNIQUE(document_level,source_id,version),
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_candidate_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, name TEXT NOT NULL,
+    scope TEXT NOT NULL, description TEXT, lexical_signals_json TEXT, recurring_senders_json TEXT,
+    recurring_domains_json TEXT, typical_attachments_json TEXT, rationale TEXT,
+    confidence REAL NOT NULL DEFAULT 0, conversation_count INTEGER NOT NULL DEFAULT 0,
+    is_fragmented INTEGER NOT NULL DEFAULT 0, merge_with_json TEXT, is_noise INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'candidate', created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+    FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_candidate_conversations (
+    candidate_id INTEGER NOT NULL, conversation_id INTEGER NOT NULL, relevance REAL NOT NULL DEFAULT 0,
+    representative INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(candidate_id,conversation_id),
+    FOREIGN KEY(candidate_id) REFERENCES atlas_candidate_categories(id),
+    FOREIGN KEY(conversation_id) REFERENCES atlas_conversations(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, candidate_id INTEGER,
+    scope TEXT NOT NULL, subject_type TEXT, subject_name TEXT, context_type TEXT, context_name TEXT,
+    operational_theme TEXT NOT NULL, description TEXT, lexical_signals_json TEXT,
+    recurring_senders_json TEXT, recurring_domains_json TEXT, typical_attachments_json TEXT,
+    assignment_criterion TEXT, exclusions_json TEXT, near_categories_json TEXT,
+    status TEXT NOT NULL DEFAULT 'approved', confidence REAL NOT NULL DEFAULT 0,
+    source TEXT NOT NULL DEFAULT 'human', last_reviewed_at TEXT, notes TEXT, created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, category_id INTEGER NOT NULL, conversation_id INTEGER,
+    example_type TEXT NOT NULL DEFAULT 'positive', note TEXT, created_at TEXT NOT NULL,
+    UNIQUE(category_id,conversation_id,example_type), FOREIGN KEY(category_id) REFERENCES atlas_categories(id)
+);
+CREATE TABLE IF NOT EXISTS atlas_review_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, target_type TEXT NOT NULL,
+    target_id INTEGER NOT NULL, action TEXT NOT NULL, before_json TEXT, after_json TEXT,
+    notes TEXT, created_at TEXT NOT NULL, FOREIGN KEY(project_id) REFERENCES projects(id)
+);
 """
 
 
@@ -417,7 +492,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
-    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 6):
+    if db_path.exists() and backup_before_migration and _needs_migration(db_path, 7):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         shutil.copy2(db_path, db_path.with_suffix(db_path.suffix + f".backup-{timestamp}"))
     with connect(db_path) as con:
@@ -489,7 +564,7 @@ def init_db(db_path: Path, backup_before_migration: bool = True) -> None:
             {"classification_class_id": "INTEGER", "human_notes": "TEXT"},
         )
         con.execute(
-            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '6')"
+            "INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('schema_version', '7')"
         )
 
 

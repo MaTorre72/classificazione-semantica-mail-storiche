@@ -18,7 +18,21 @@ python -m venv .venv
 .\.venv\Scripts\pip install -e .[dev,ml,ui]
 ```
 
-## Uso normale
+## Nuovo percorso Atlante
+
+```powershell
+email-atlas inventory --input mail --db data/email_cluster.sqlite --project archivio_storico
+email-atlas update --input mail --db data/email_cluster.sqlite --project archivio_storico
+email-atlas search --db data/email_cluster.sqlite --project archivio_storico --query "rifiuti Tenax"
+email-atlas review --db data/email_cluster.sqlite --project archivio_storico
+email-atlas export-atlas --db data/email_cluster.sqlite --project archivio_storico --output data/atlas
+email-atlas evaluate --db data/email_cluster.sqlite --project archivio_storico
+```
+
+Il comando `email-cluster` e la console precedente restano disponibili per compatibilità. Il nuovo
+percorso principale è documentato nella [Guida rapida](docs/guida_rapida.md).
+
+## Uso precedente durante la transizione
 
 ### 1. Importa o aggiorna l'archivio
 
@@ -81,6 +95,15 @@ Il LLM propone nome, sintesi ed email sospette; l'utente mantiene sempre il cont
 
 ## Documentazione
 
+- [Guida rapida Atlante](docs/guida_rapida.md)
+- [Che cos'è l'Atlante](docs/atlante_semantico.md)
+- [Pipeline conversation-first](docs/pipeline.md)
+- [Privacy](docs/privacy.md)
+- [Aggiornamento periodico](docs/aggiornamento_periodico.md)
+- [Revisione umana](docs/revisione_umana.md)
+- [Uso del LLM](docs/uso_llm.md)
+- [Termini tecnici avanzati](docs/termini_tecnici_avanzati.md)
+- [Roadmap futura](docs/roadmap_futura.md)
 - [Workflow normale](docs/comandi.md)
 - [Console locale V4](docs/interfaccia_utente.md)
 - [Configurazione LLM locale](docs/llm_locale.md)
