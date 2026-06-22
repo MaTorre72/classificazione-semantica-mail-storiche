@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Conversazioni - Email Atlas{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <p class="eyebrow">Verifica intermedia</p>
+  <h1>Conversazioni ricostruite</h1>
+  <p>Controlla come i messaggi sono stati collegati. I riferimenti espliciti sono più affidabili del raggruppamento di fallback.</p>
+</section>
+<section class="panel">
+  <div class="panel-header"><h2>{{ conversations|length }} conversazioni</h2><a href="/atlas/reports/conversation_report.html">Apri il report</a></div>
+  {% if conversations %}
+  <div class="table-wrap"><table><thead><tr><th>Oggetto</th><th>Messaggi</th><th>Periodo</th><th>Metodo</th><th>Confidenza</th></tr></thead><tbody>
+  {% for item in conversations %}<tr><td>{{ item.subject or "Senza oggetto" }}</td><td>{{ item.message_count }}</td><td>{{ item.first_date or "-" }}<br>{{ item.last_date or "-" }}</td><td>{{ item.method }}</td><td>{{ item.confidence }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p>Nessuna conversazione disponibile. Esegui prima parsing e ricostruzione conversazioni.</p>{% endif %}
+</section>
+{% endblock %}

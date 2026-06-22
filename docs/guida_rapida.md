@@ -25,3 +25,6 @@ Prima dell'importazione usa `inventory`: mostra cosa contiene la sorgente senza 
 revisione trasforma proposte automatiche in Categorie dell'Atlante. Il LLM è sempre opzionale.
 
 Per una dimostrazione isolata: `email-atlas smoke-test`.
+# Controlli operativi
+
+Procedi una fase alla volta dalla GUI e apri il report prodotto. Prima della discovery verifica che il numero di conversazioni sia plausibile, che i fallback non uniscano pratiche diverse e che la ricerca trovi termini noti. In caso di errore conserva database e sorgenti, correggi il prerequisito indicato e ripeti solo la fase interessata. Consulta `primi_passi.md` per il percorso completo e `troubleshooting.md` per il recupero.

@@ -9,21 +9,18 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from email_cluster.atlas.service import (
-    build_conversations,
-    build_index,
-    build_semantic_docs,
-    discover,
-    embed_documents,
-    evaluate,
-    export_atlas,
-    extract_entities,
-    inventory,
-    parse_and_clean,
-    review_action,
-    search as atlas_search,
-    update_archive,
-)
+from email_cluster.atlas.conversations import build_conversations
+from email_cluster.atlas.discovery import discover
+from email_cluster.atlas.embeddings import embed_documents
+from email_cluster.atlas.entities import extract_entities
+from email_cluster.atlas.evaluation import evaluate
+from email_cluster.atlas.export import export_atlas
+from email_cluster.atlas.inventory import inventory
+from email_cluster.atlas.parsing import parse_and_clean
+from email_cluster.atlas.review import review_action
+from email_cluster.atlas.search import build_index, search as atlas_search
+from email_cluster.atlas.semantic_docs import build_semantic_docs
+from email_cluster.atlas.update import update_archive
 from email_cluster.storage.database import connect
 from email_cluster.storage.repository import Repository
 

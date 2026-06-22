@@ -39,6 +39,9 @@ def test_main_console_pages_render(tmp_path: Path) -> None:
     client, _ = make_client(tmp_path)
     for path in (
         "/",
+        "/atlas/conversations",
+        "/atlas/review",
+        "/atlas/search",
         "/wizard",
         "/llm",
         "/macro",
@@ -49,7 +52,7 @@ def test_main_console_pages_render(tmp_path: Path) -> None:
     ):
         response = client.get(path)
         assert response.status_code == 200
-        assert "Archivio storico" in response.text
+        assert "Email Atlas" in response.text
 
 
 def test_context_and_email_drill_down(tmp_path: Path) -> None:

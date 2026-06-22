@@ -1,15 +1,23 @@
-# Atlante semantico dell'archivio email storico
+# Email Atlas
 
-> **Direzione corrente:** il progetto sta passando da una classificazione centrata sui singoli
-> messaggi a un Atlante semantico fondato sulle Conversazioni. La pipeline e i comandi precedenti
-> restano disponibili durante la transizione. Consulta il
-> [documento di ripensamento](docs/ripensamento_progetto_atlante_semantico.md).
+Email Atlas trasforma archivi email storici EML/MBOX in un atlante locale di conversazioni e categorie revisionabili. Non modifica i file sorgente e non invia dati al cloud.
 
-Strumento locale per trasformare archivi MBOX/EML in **Insiemi comprensibili**: pratiche,
-adempimenti, argomenti tecnici, documentazione e conversazioni. L'analisi automatica è un supporto;
-la classificazione finale è costruita e confermata dall'utente.
+## A cosa serve
 
-Tutto resta sul computer: nessuna API cloud, telemetria o invio di email e allegati.
+Aiuta a capire quali pratiche, soggetti e temi ricorrono in archivi grandi, mantenendo la decisione finale nelle mani dell'utente.
+
+## Flusso consigliato
+
+1. Inventario dei file.
+2. Parsing e pulizia.
+3. Ricostruzione e verifica delle conversazioni.
+4. Indicizzazione, entita e documenti semantici.
+5. Discovery euristica provvisoria.
+6. Revisione umana, esportazione e valutazione.
+
+## Avvio rapido
+
+Su Windows avvia `AVVIA_CONSOLE.bat`. La console locale apre `http://127.0.0.1:8765` e guida tutte le fasi. Inserisci la cartella dell'archivio e premi un comando alla volta, controllando risultato e report prima di proseguire.
 
 ## Installazione
 
@@ -18,105 +26,52 @@ python -m venv .venv
 .\.venv\Scripts\pip install -e .[dev,ml,ui]
 ```
 
-## Nuovo percorso Atlante
+## Interfaccia grafica
+
+La GUI e il punto di accesso principale: mostra stato, prossimo passo, conversazioni, ricerca, revisione e report. Le operazioni che ricostruiscono dati o generano proposte chiedono conferma. Vedi [guida GUI](docs/gui.md).
+
+## CLI avanzata
 
 ```powershell
 email-atlas inventory --input mail --db data/email_cluster.sqlite --project archivio_storico
 email-atlas update --input mail --db data/email_cluster.sqlite --project archivio_storico
-email-atlas search --db data/email_cluster.sqlite --project archivio_storico --query "rifiuti Tenax"
-email-atlas review --db data/email_cluster.sqlite --project archivio_storico
+email-atlas search --db data/email_cluster.sqlite --project archivio_storico --query "contratto alfa"
 email-atlas export-atlas --db data/email_cluster.sqlite --project archivio_storico --output data/atlas
-email-atlas evaluate --db data/email_cluster.sqlite --project archivio_storico
 ```
 
-Il comando `email-cluster` e la console precedente restano disponibili per compatibilità. Il nuovo
-percorso principale è documentato nella [Guida rapida](docs/guida_rapida.md).
+Usa `email-atlas --help` e `email-atlas COMANDO --help` per le opzioni.
 
-## Uso precedente durante la transizione
+## Output
 
-### 1. Importa o aggiorna l'archivio
+Il database SQLite resta in `data/`. I report HTML/JSON sono in `reports/`; l'Atlante esportato puo essere JSON, YAML, CSV, XLSX, Markdown e HTML. Ogni report indica sintesi, risultati, warning e passo successivo.
 
-```powershell
-email-cluster run --input mail --project archivio_storico --db data/email_cluster.sqlite
-```
+## Discovery ed embedding
 
-Puoi aggiungere nuovi MBOX nella stessa cartella e rilanciare il comando: file ed email già elaborati
-vengono saltati.
+La discovery attuale e **euristica e provvisoria**: combina termini degli oggetti, entita, domini ricorrenti e nomi degli allegati. Gli embedding possono essere calcolati e memorizzati, ma **non guidano ancora la discovery**. Le proposte non sono classificazioni definitive.
 
-### 2. Apri la console locale
+## Privacy
 
-```powershell
-email-cluster ui --project archivio_storico --db data/email_cluster.sqlite
-```
-
-Si apre su `http://127.0.0.1:8765` e mostra stato archivio, struttura **Area → Classe → Insieme → Email** e **una sola prossima
-azione consigliata**. I comandi CLI restano disponibili nella documentazione avanzata.
-
-### 3. Controlla Aree e prossimo Insieme
-
-```powershell
-email-cluster macro-review --project archivio_storico --db data/email_cluster.sqlite
-email-cluster review --next --project archivio_storico --db data/email_cluster.sqlite
-```
-
-La separazione tra professionale, personale, account, newsletter, acquisti e notifiche avviene prima
-degli Insiemi professionali.
-
-### 4. Approva o correggi
-
-```powershell
-email-cluster approve-context --context 12 --db data/email_cluster.sqlite
-email-cluster rename-context --context 12 --name "Tenax — registri rifiuti sede TPM" --db data/email_cluster.sqlite
-```
-
-Sono disponibili anche spostamento/esclusione email, divisione di un Insieme e marcatura non operativa.
-Ogni azione è tracciata e non modifica le run tecniche originali.
-
-### 5. Esporta
-
-```powershell
-email-cluster export-final --project archivio_storico --db data/email_cluster.sqlite
-```
-
-## Interfaccia grafica precedente
-
-```powershell
-email-cluster-gui
-```
-
-La GUI Tkinter resta disponibile per compatibilità. Per il lavoro normale è consigliata la console
-web locale descritta sopra.
-
-## LLM locale
-
-Il sistema funziona senza LLM e segnala quando nomi/spiegazioni sono euristici. Opzionalmente supporta
-Ollama esclusivamente su localhost o llama.cpp con un GGUF locale. Non scarica modelli automaticamente.
-Il LLM propone nome, sintesi ed email sospette; l'utente mantiene sempre il controllo.
+L'elaborazione e locale. `--public-safe` rimuove nomi di soggetti, contesti, mittenti e domini dall'export; non sostituisce una valutazione privacy sul dataset. Vedi [privacy](docs/privacy.md).
 
 ## Documentazione
 
-- [Guida rapida Atlante](docs/guida_rapida.md)
-- [Che cos'è l'Atlante](docs/atlante_semantico.md)
-- [Pipeline conversation-first](docs/pipeline.md)
-- [Privacy](docs/privacy.md)
-- [Aggiornamento periodico](docs/aggiornamento_periodico.md)
+- [Primi passi](docs/primi_passi.md)
+- [Guida rapida](docs/guida_rapida.md)
+- [Pipeline](docs/pipeline.md)
 - [Revisione umana](docs/revisione_umana.md)
-- [Uso del LLM](docs/uso_llm.md)
-- [Termini tecnici avanzati](docs/termini_tecnici_avanzati.md)
-- [Roadmap futura](docs/roadmap_futura.md)
-- [Workflow normale](docs/comandi.md)
-- [Console locale V4](docs/interfaccia_utente.md)
-- [Configurazione LLM locale](docs/llm_locale.md)
-- [Comandi avanzati](docs/avanzato.md)
-- [Gestire la classificazione](docs/classificazione.md)
-- [UX gerarchica, archivio e assistente AI](docs/ux_classi_archivio_ai.md)
-- [Modelli LLM leggeri](docs/llm_leggeri.md)
-- [Termini tecnici avanzati](docs/avanzato_termini_tecnici.md)
-- [Revisione umana e LLM](docs/revisione_umano_llm.md)
-- [Architettura](docs/architettura.md)
+- [Aggiornamenti periodici](docs/aggiornamento_periodico.md)
+- [Glossario](docs/glossario.md)
+- [Risoluzione problemi](docs/troubleshooting.md)
+- [Revisione UX](docs/ux_review.md)
 
-Per diagnosticare l'ambiente:
+## Verifica per sviluppatori
 
 ```powershell
-email-cluster doctor --input mail --db data/email_cluster.sqlite
+.\.venv\Scripts\python -m pytest
+.\.venv\Scripts\python -m ruff check src tests
+email-atlas smoke-test
 ```
+
+## Funzioni precedenti
+
+Il comando `email-cluster` e le schermate precedenti restano disponibili da **Funzioni precedenti** per compatibilita. Il percorso raccomandato per nuovo lavoro e Email Atlas.

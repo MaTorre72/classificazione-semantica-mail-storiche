@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Ricerca - Email Atlas{% endblock %}
+{% block content %}
+<section class="page-heading"><p class="eyebrow">Esplorazione locale</p><h1>Ricerca nell'archivio</h1><p>Cerca nei testi indicizzati senza inviare contenuti fuori dal computer.</p></section>
+<section class="panel"><form method="get" action="/atlas/search" class="search-form"><label for="q">Parole da cercare</label><div><input id="q" name="q" value="{{ query }}" placeholder="es. contratto cliente alfa"><button type="submit">Cerca</button></div></form>{% if error %}<p class="notice error">{{ error }}</p>{% endif %}</section>
+{% if query %}<section class="panel"><h2>Risultati per “{{ query }}”</h2>{% for item in results %}<article class="search-result"><h3>{{ item.subject or "Senza oggetto" }}</h3><p>{{ item.snippet or item.body_text or "" }}</p><small>{{ item.sender or "Mittente non disponibile" }} · {{ item.date or "Data non disponibile" }}</small></article>{% else %}<p>Nessun risultato. Prova termini meno specifici oppure verifica di avere eseguito l'indicizzazione.</p>{% endfor %}</section>{% endif %}
+{% endblock %}

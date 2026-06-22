@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from email_cluster.ui.data import UiData
+from email_cluster.ui.atlas_data import AtlasUiData
 from email_cluster.ui.terminology import TERMS, area_name, status_name
 
 
@@ -16,6 +17,7 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(title="Console classificazione email storiche", docs_url=None, redoc_url=None)
     data = UiData(db_path, project, config_path)
+    atlas = AtlasUiData(db_path, project, config_path)
     templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
     templates.env.globals.update(
         term=lambda key: TERMS[key], area_name=area_name, status_name=status_name
@@ -33,7 +35,52 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
+        return page(request, "atlas_home.html", atlas=atlas.status())
+
+    @app.get("/legacy", response_class=HTMLResponse)
+    def legacy_home(request: Request):
         return page(request, "home.html", dashboard=data.dashboard())
+
+    @app.get("/atlas/conversations", response_class=HTMLResponse)
+    def atlas_conversations(request: Request):
+        return page(request, "atlas_conversations.html", conversations=atlas.conversations())
+
+    @app.get("/atlas/review", response_class=HTMLResponse)
+    def atlas_review(request: Request):
+        return page(
+            request, "atlas_review.html", candidates=atlas.candidates(), approved=atlas.approved()
+        )
+
+    @app.get("/atlas/search", response_class=HTMLResponse)
+    def atlas_search_page(request: Request, query: str = ""):
+        try:
+            results = atlas.search(query) if query else []
+            error = ""
+        except (ValueError, RuntimeError, Exception) as exc:  # FTS errors become user guidance.
+            results, error = [], str(exc)
+        return page(request, "atlas_search.html", query=query, results=results, error=error)
+
+    @app.get("/atlas/reports/{name}", response_class=HTMLResponse)
+    def atlas_report(name: str):
+        try:
+            return HTMLResponse(atlas.report(name))
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/api/atlas/run/{phase}")
+    async def atlas_run_phase(phase: str, request: Request):
+        try:
+            return atlas.run_phase(phase, await request.json())
+        except (ValueError, RuntimeError, OSError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/atlas/review/{candidate_id}/{action}")
+    async def atlas_review_action(candidate_id: int, action: str, request: Request):
+        values = await request.json()
+        try:
+            return atlas.review(candidate_id, action, values.get("name"), values.get("notes", ""))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/wizard", response_class=HTMLResponse)
     def wizard(request: Request, step: int = 1):

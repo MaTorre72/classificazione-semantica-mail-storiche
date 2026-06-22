@@ -5,7 +5,9 @@ import yaml
 from typer.testing import CliRunner
 
 from email_cluster.atlas.cli import app
-from email_cluster.atlas.service import export_atlas, review_action, search
+from email_cluster.atlas.export import export_atlas
+from email_cluster.atlas.review import review_action
+from email_cluster.atlas.search import search
 from email_cluster.atlas.smoke import create_fixture, run_smoke_test
 from email_cluster.storage.database import connect, init_db
 
