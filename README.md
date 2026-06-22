@@ -1,4 +1,9 @@
-# Classificazione semantica mail storiche
+# Atlante semantico dell'archivio email storico
+
+> **Direzione corrente:** il progetto sta passando da una classificazione centrata sui singoli
+> messaggi a un Atlante semantico fondato sulle Conversazioni. La pipeline e i comandi precedenti
+> restano disponibili durante la transizione. Consulta il
+> [documento di ripensamento](docs/ripensamento_progetto_atlante_semantico.md).
 
 Strumento locale per trasformare archivi MBOX/EML in **Insiemi comprensibili**: pratiche,
 adempimenti, argomenti tecnici, documentazione e conversazioni. L'analisi automatica è un supporto;
