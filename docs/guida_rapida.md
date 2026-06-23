@@ -28,3 +28,8 @@ Per una dimostrazione isolata: `email-atlas smoke-test`.
 # Controlli operativi
 
 Procedi una fase alla volta dalla GUI e apri il report prodotto. Prima della discovery verifica che il numero di conversazioni sia plausibile, che i fallback non uniscano pratiche diverse e che la ricerca trovi termini noti. In caso di errore conserva database e sorgenti, correggi il prerequisito indicato e ripeti solo la fase interessata. Consulta `primi_passi.md` per il percorso completo e `troubleshooting.md` per il recupero.
+# Nuovo percorso consigliato
+
+Avvia `AVVIA_CONSOLE.bat` e usa le quattro sezioni dello Studio Workbench. Per prima cosa genera `outputs/study_pack`, poi leggi `study_report.html`. Se serve un'esplorazione visuale più ricca, genera l'Orange Pack. Solo dopo modifica `classification_workspace.csv` e importa le righe approvate per ottenere l'Atlante finale.
+
+La ricerca e un supporto dentro Esplora Risultati, non una fase obbligatoria. Assistente locale e strumenti precedenti sono in Avanzate / Legacy.

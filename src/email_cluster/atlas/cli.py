@@ -20,6 +20,7 @@ from email_cluster.atlas.parsing import parse_and_clean
 from email_cluster.atlas.review import review_action
 from email_cluster.atlas.search import build_index, search as atlas_search
 from email_cluster.atlas.semantic_docs import build_semantic_docs
+from email_cluster.atlas.study import build_study_dataset, export_orange, import_classification
 from email_cluster.atlas.update import update_archive
 from email_cluster.storage.database import connect
 from email_cluster.storage.repository import Repository
@@ -167,6 +168,40 @@ def update_cmd(
 @app.command("evaluate")
 def evaluate_cmd(db: Db, project: Project) -> None:
     show(evaluate(db, project))
+
+
+@app.command("build-study-dataset")
+def build_study_dataset_cmd(
+    input_path: Annotated[Path, typer.Option("--input")],
+    db: Db,
+    project: Project,
+    output: Annotated[Path, typer.Option("--output")] = Path("outputs/study_pack"),
+    config: Path = Path("config/default.yaml"),
+    account: Annotated[list[str] | None, typer.Option("--account")] = None,
+) -> None:
+    """Prepara il pacchetto completo per lo studio dell'archivio storico."""
+    show(build_study_dataset(input_path, db, project, output, config, account))
+
+
+@app.command("export-orange")
+def export_orange_cmd(
+    db: Db,
+    project: Project,
+    output: Annotated[Path, typer.Option("--output")] = Path("outputs/orange_pack"),
+) -> None:
+    """Esporta conversazioni, termini, entita e rete in CSV per Orange."""
+    show(export_orange(db, project, output))
+
+
+@app.command("import-classification")
+def import_classification_cmd(
+    db: Db,
+    project: Project,
+    file: Annotated[Path, typer.Option("--file")],
+    output: Annotated[Path, typer.Option("--output")] = Path("outputs/atlas_finale"),
+) -> None:
+    """Importa le decisioni dal workspace CSV e genera l'Atlante finale."""
+    show(import_classification(db, project, file, output))
 
 
 @app.command("llm-status")

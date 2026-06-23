@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from email_cluster.ui.data import UiData
@@ -36,11 +36,40 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
-        return page(request, "atlas_home.html", atlas=atlas.status())
+        study_dir = Path("outputs/study_pack")
+        orange_dir = Path("outputs/orange_pack")
+        final_dir = Path("outputs/atlas_finale")
+        return page(
+            request,
+            "atlas_home.html",
+            atlas=atlas.status(),
+            study_files=sorted(p.name for p in study_dir.glob("*") if p.is_file()),
+            orange_files=sorted(p.name for p in orange_dir.glob("*") if p.is_file()),
+            final_files=sorted(p.name for p in final_dir.glob("*") if p.is_file()),
+        )
+
+    @app.get("/atlas/files/{pack}/{name}")
+    def atlas_file(pack: str, name: str):
+        roots = {
+            "study": Path("outputs/study_pack"),
+            "orange": Path("outputs/orange_pack"),
+            "final": Path("outputs/atlas_finale"),
+        }
+        root = roots.get(pack)
+        if not root or Path(name).name != name:
+            raise HTTPException(404, "File non riconosciuto")
+        path = root / name
+        if not path.is_file():
+            raise HTTPException(404, "File non ancora disponibile")
+        return FileResponse(path)
 
     @app.get("/legacy", response_class=HTMLResponse)
     def legacy_home(request: Request):
         return page(request, "home.html", dashboard=data.dashboard())
+
+    @app.get("/advanced", response_class=HTMLResponse)
+    def advanced(request: Request):
+        return page(request, "advanced.html")
 
     @app.get("/atlas/conversations", response_class=HTMLResponse)
     def atlas_conversations(request: Request):

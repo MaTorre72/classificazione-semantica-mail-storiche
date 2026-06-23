@@ -1,70 +1,54 @@
 # Email Atlas
 
-Email Atlas trasforma archivi email storici EML/MBOX in un atlante locale di conversazioni e categorie revisionabili. Non modifica i file sorgente e non invia dati al cloud.
+**Email Atlas non e uno strumento da usare tutti i giorni. E uno strumento di studio per costruire una classificazione utile partendo dall'archivio storico.**
 
-## A cosa serve
+Il progetto prepara conversazioni, dataset, distribuzioni, mappe semantiche, reti di relazioni e categorie candidate. Gli output possono essere esplorati nella GUI, in Orange Data Mining, Excel, LibreOffice, Gephi, Cytoscape o Python. Nessuna email viene spostata e nessun dato viene inviato fuori dal computer.
 
-Aiuta a capire quali pratiche, soggetti e temi ricorrono in archivi grandi, mantenendo la decisione finale nelle mani dell'utente.
+## Studio Workbench
 
-## Flusso consigliato
+La GUI ha quattro sezioni:
 
-1. Inventario dei file.
-2. Parsing e pulizia.
-3. Ricostruzione e verifica delle conversazioni.
-4. Indicizzazione, entita e documenti semantici.
-5. Discovery euristica provvisoria.
-6. Revisione umana, esportazione e valutazione.
+1. **Prepara Studio**: costruisce dataset puliti e riavviabili.
+2. **Esplora Risultati**: apre report, conversazioni, mappe e relazioni.
+3. **Esporta per Orange**: produce CSV e istruzioni per analisi visuale esterna.
+4. **Costruisci Atlante**: esporta un workspace modificabile e importa decisioni umane.
 
-## Avvio rapido
+Avvio Windows:
 
-Su Windows avvia `AVVIA_CONSOLE.bat`. La console locale apre `http://127.0.0.1:8765` e guida tutte le fasi. Inserisci la cartella dell'archivio e premi un comando alla volta, controllando risultato e report prima di proseguire.
-
-## Installazione
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\pip install -e .[dev,ml,ui]
+```text
+AVVIA_CONSOLE.bat
 ```
 
-## Interfaccia grafica
-
-La GUI e il punto di accesso principale: mostra stato, prossimo passo, conversazioni, ricerca, revisione e report. Le operazioni che ricostruiscono dati o generano proposte chiedono conferma. Vedi [guida GUI](docs/gui.md).
-
-## CLI avanzata
+## Comandi principali
 
 ```powershell
-email-atlas inventory --input mail --db data/email_cluster.sqlite --project archivio_storico
-email-atlas update --input mail --db data/email_cluster.sqlite --project archivio_storico
-email-atlas search --db data/email_cluster.sqlite --project archivio_storico --query "contratto alfa"
-email-atlas export-atlas --db data/email_cluster.sqlite --project archivio_storico --output data/atlas
+email-atlas build-study-dataset --input mail --db data/email_cluster.sqlite --project archivio_storico --output outputs/study_pack
+email-atlas export-orange --db data/email_cluster.sqlite --project archivio_storico --output outputs/orange_pack
+email-atlas import-classification --db data/email_cluster.sqlite --project archivio_storico --file outputs/study_pack/classification_workspace.csv --output outputs/atlas_finale
 ```
 
-Usa `email-atlas --help` e `email-atlas COMANDO --help` per le opzioni.
+## Risultati centrali
 
-## Output
+`outputs/study_pack/` contiene dataset di conversazioni, messaggi, features, punti 2D, similarita, entita, soggetti, termini, allegati, cluster, rete, categorie candidate, workspace e `study_report.html`.
 
-Il database SQLite resta in `data/`. I report HTML/JSON sono in `reports/`; l'Atlante esportato puo essere JSON, YAML, CSV, XLSX, Markdown e HTML. Ogni report indica sintesi, risultati, warning e passo successivo.
+`outputs/orange_pack/` contiene file normalizzati per Orange e quattro workflow suggeriti.
 
-## Discovery ed embedding
+`outputs/atlas_finale/` contiene `atlas_final.csv`, YAML, JSON e HTML derivati soltanto dalle righe approvate nel workspace.
 
-La discovery attuale e **euristica e provvisoria**: combina termini degli oggetti, entita, domini ricorrenti e nomi degli allegati. Gli embedding possono essere calcolati e memorizzati, ma **non guidano ancora la discovery**. Le proposte non sono classificazioni definitive.
-
-## Privacy
-
-L'elaborazione e locale. `--public-safe` rimuove nomi di soggetti, contesti, mittenti e domini dall'export; non sostituisce una valutazione privacy sul dataset. Vedi [privacy](docs/privacy.md).
+Se gli embedding non sono disponibili, la mappa usa TF-IDF e PCA e lo dichiara nel report. L'LLM locale e facoltativo e non blocca nessun passaggio.
 
 ## Documentazione
 
-- [Primi passi](docs/primi_passi.md)
+- [Studio Workbench](docs/studio_workbench.md)
+- [Esportazione Orange](docs/orange_export.md)
+- [Esplorazione visuale](docs/visual_exploration.md)
+- [Classification Workspace](docs/classification_workspace.md)
+- [Atlante finale](docs/atlas_finale.md)
 - [Guida rapida](docs/guida_rapida.md)
-- [Pipeline](docs/pipeline.md)
-- [Revisione umana](docs/revisione_umana.md)
-- [Aggiornamenti periodici](docs/aggiornamento_periodico.md)
-- [Glossario](docs/glossario.md)
-- [Risoluzione problemi](docs/troubleshooting.md)
-- [Revisione UX](docs/ux_review.md)
+- [Privacy](docs/privacy.md)
+- [Troubleshooting](docs/troubleshooting.md)
 
-## Verifica per sviluppatori
+## Sviluppo
 
 ```powershell
 .\.venv\Scripts\python -m pytest
@@ -72,6 +56,4 @@ L'elaborazione e locale. `--public-safe` rimuove nomi di soggetti, contesti, mit
 email-atlas smoke-test
 ```
 
-## Funzioni precedenti
-
-Il comando `email-cluster` e le schermate precedenti restano disponibili da **Funzioni precedenti** per compatibilita. Il percorso raccomandato per nuovo lavoro e Email Atlas.
+Ricerca, assistente locale e strumenti precedenti sono disponibili solo in **Avanzate / Legacy**: sono supporti facoltativi, non tappe della classificazione.

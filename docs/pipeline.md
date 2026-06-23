@@ -18,3 +18,8 @@ richiedono backup e consenso; i batch embedding supportano cache, batch e `--low
 Ogni fase legge i risultati della precedente e produce dati nel database o un report, senza modificare EML/MBOX. Inventario misura; parsing estrae e pulisce; conversazioni collega con header e fallback prudente; indice abilita la ricerca; entita e documenti semantici preparano evidenze; discovery propone categorie euristiche; revisione registra decisioni; export pubblica l'Atlante; evaluate segnala frammentazione. Gli embedding memorizzati non guidano oggi la discovery.
 
 Un risultato tecnicamente riuscito non equivale a un risultato corretto: controlla warning, esempi di conversazioni lunghe, categorie fragili e rapporto categorie/conversazioni.
+# Output di studio
+
+La pipeline tecnica è orchestrata da `build-study-dataset`, ma non viene più presentata come nove tappe utente. I checkpoint interni preparano conversazioni, indice, entità, documenti semantici e proposte; il contratto pubblico è il contenuto di `outputs/study_pack`.
+
+Gli embedding sono opzionali. In loro assenza, TF-IDF + PCA produce coordinate esplorative con un warning esplicito. LLM e rete non sono prerequisiti.

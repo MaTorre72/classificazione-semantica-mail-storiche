@@ -57,7 +57,7 @@ def test_fragile_state_and_entity_state_are_independent(tmp_path: Path) -> None:
 def test_home_result_panel_is_before_pipeline_and_review_empty_is_clear(tmp_path: Path) -> None:
     client, db = smoke_client(tmp_path)
     home = client.get("/").text
-    assert home.index("actionPanel") < home.index("phase-inventory")
+    assert home.index("runStatus") < home.index('id="prepare"')
     with connect(db) as con:
         con.execute("DELETE FROM atlas_candidate_conversations")
         con.execute("DELETE FROM atlas_candidate_categories")

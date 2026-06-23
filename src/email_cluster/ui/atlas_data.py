@@ -14,6 +14,7 @@ from email_cluster.atlas.parsing import parse_and_clean
 from email_cluster.atlas.review import review_action
 from email_cluster.atlas.search import build_index, search
 from email_cluster.atlas.semantic_docs import build_semantic_docs
+from email_cluster.atlas.study import build_study_dataset, export_orange, import_classification
 from email_cluster.storage.database import connect
 from email_cluster.storage.repository import Repository
 
@@ -337,6 +338,29 @@ class AtlasUiData:
     def run_phase(self, phase: str, values: dict[str, Any]) -> dict[str, Any]:
         reports = Path(values.get("reports") or self.reports_dir)
         input_path = Path(values.get("input_path") or "mail")
+        if phase == "build_study":
+            accounts = [
+                item.strip() for item in values.get("accounts", "").split(",") if item.strip()
+            ]
+            return build_study_dataset(
+                input_path,
+                self.db_path,
+                self.project,
+                Path(values.get("output") or "outputs/study_pack"),
+                self.config_path,
+                accounts,
+            )
+        if phase == "export_orange":
+            return export_orange(
+                self.db_path, self.project, Path(values.get("output") or "outputs/orange_pack")
+            )
+        if phase == "import_classification":
+            return import_classification(
+                self.db_path,
+                self.project,
+                Path(values.get("file") or "outputs/study_pack/classification_workspace.csv"),
+                Path(values.get("output") or "outputs/atlas_finale"),
+            )
         if phase == "inventory":
             return inventory(input_path, self.db_path, self.project, reports)
         if phase == "parse":
