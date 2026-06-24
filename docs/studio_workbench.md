@@ -14,3 +14,11 @@ Il comando `build-study-dataset` e riavviabile: import e tabelle usano chiavi/ch
 ## Cosa non fa
 
 Non sposta email, non crea regole quotidiane, non integra Thunderbird o Virgilio, non richiede cloud e non usa un LLM per decidere la classificazione.
+
+## Aggiornare o ricostruire
+
+**Aggiorna studio** usa la modalità sicura: con file invariati riusa i dati. Se nuove email rendono necessaria una ricostruzione, si ferma per proteggere revisioni e Atlante finale.
+
+**Ricostruisci dati derivati** crea prima un backup e rigenera conversazioni, documenti, embedding, entità e proposte. Le decisioni umane e l'Atlante finale restano nel database.
+
+**Azzera progetto** richiede conferma esplicita, crea un backup e cancella tutto il progetto. Usalo soltanto per ricominciare davvero.

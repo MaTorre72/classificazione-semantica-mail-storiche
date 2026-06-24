@@ -72,4 +72,4 @@ def test_discovery_is_blocked_without_prerequisites(tmp_path: Path) -> None:
         con.execute("DELETE FROM atlas_semantic_documents")
     response = client.post("/api/atlas/run/discover", json={})
     assert response.status_code == 409
-    assert "Documenti conversazione" in response.json()["detail"]
+    assert "Documenti conversazione" in response.json()["detail"]["message"]

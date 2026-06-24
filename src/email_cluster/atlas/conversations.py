@@ -13,6 +13,7 @@ from email_cluster.storage.database import connect, init_db
 from email_cluster.storage.repository import Repository, utcnow
 
 from .reports import write_report
+from .reset import reset_atlas_derived_data
 
 GENERIC_SUBJECTS = {"documenti", "informazioni", "richiesta", "aggiornamento", "comunicazione"}
 
@@ -59,9 +60,48 @@ def build_conversations(
     project: str,
     accounts: list[str] | None = None,
     reports: Path = Path("reports"),
+    mode: str = "safe",
 ) -> dict[str, Any]:
     """Reconstruct conversations using headers first and a conservative fallback second."""
     init_db(db_path)
+    if mode not in {"safe", "rebuild-derived"}:
+        raise ValueError("Modalita conversazioni non valida: usa safe o rebuild-derived")
+    with connect(db_path) as con:
+        pid = Repository(con).project_id(project)
+        existing = con.execute(
+            "SELECT count(*) FROM atlas_conversations WHERE project_id=?", (pid,)
+        ).fetchone()[0]
+        existing_emails = con.execute(
+            "SELECT coalesce(sum(message_count),0) FROM atlas_conversations WHERE project_id=?",
+            (pid,),
+        ).fetchone()[0]
+        current_emails = con.execute(
+            "SELECT count(*) FROM emails WHERE project_id=?", (pid,)
+        ).fetchone()[0]
+    reset_report = None
+    if existing and mode == "safe":
+        if current_emails != existing_emails:
+            raise ValueError(
+                f"Sono presenti {max(0, current_emails - existing_emails)} email non collegate. "
+                "Per proteggere revisioni e Atlante finale non ricostruisco automaticamente: "
+                "usa la modalita rebuild-derived, che crea prima un backup."
+            )
+        result = {
+            "project": project,
+            "emails": current_emails,
+            "conversations": existing,
+            "reused": True,
+            "mode": "safe",
+            "new_unlinked_emails": 0,
+            "warnings": [
+                "Conversazioni esistenti riutilizzate per proteggere revisioni e dati collegati."
+            ],
+            "next_step": "Nessuna nuova email da collegare; proseguo con i dati esistenti.",
+        }
+        write_report(reports / "conversation_report.html", "Conversazioni riutilizzate", result)
+        return result
+    if existing and mode == "rebuild-derived":
+        reset_report = reset_atlas_derived_data(db_path, project).to_dict()
     accounts = [value.lower() for value in (accounts or [])]
     with connect(db_path) as con:
         pid = Repository(con).project_id(project)
@@ -134,12 +174,6 @@ def build_conversations(
         for row in rows:
             groups[find(row["id"])].append(row)
 
-        con.execute(
-            "DELETE FROM atlas_conversation_messages WHERE conversation_id IN "
-            "(SELECT id FROM atlas_conversations WHERE project_id=?)",
-            (pid,),
-        )
-        con.execute("DELETE FROM atlas_conversations WHERE project_id=?", (pid,))
         low_confidence = isolated = header_conversations = fallback_conversations = 0
         conversation_examples: list[dict[str, Any]] = []
 
@@ -254,6 +288,9 @@ def build_conversations(
     multi_message_examples = [item for item in conversation_examples if item["messages"] > 1][:20]
     result = {
         "project": project,
+        "mode": mode,
+        "reused": False,
+        "reset": reset_report,
         "emails": len(rows),
         "conversations": len(groups),
         "reduction_ratio": round(1 - len(groups) / max(len(rows), 1), 3),

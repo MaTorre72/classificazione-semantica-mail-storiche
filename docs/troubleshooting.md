@@ -23,3 +23,7 @@ La discovery e euristica. Usa **Revisione** per approvare, rinominare, segnare a
 ## Ripristino
 
 I file email non vengono modificati. Prima di interventi sul database, chiudi la GUI e copia `data/email_cluster.sqlite`; per ricominciare usa un nuovo database invece di cancellare l'archivio.
+
+## Foreign key durante la ricostruzione
+
+Non disattivare le foreign key. Rilancia prima **Aggiorna studio**. Se il sistema segnala email nuove o derivati incompatibili, usa **Ricostruisci dati derivati**: viene creato automaticamente un file `.backup-...` accanto al database. **Azzera progetto** cancella anche revisioni e Atlante finale e richiede conferma.

@@ -12,6 +12,7 @@ from email_cluster.atlas.export import export_atlas
 from email_cluster.atlas.inventory import inventory
 from email_cluster.atlas.parsing import parse_and_clean
 from email_cluster.atlas.review import review_action
+from email_cluster.atlas.reset import reset_project
 from email_cluster.atlas.search import build_index, search
 from email_cluster.atlas.semantic_docs import build_semantic_docs
 from email_cluster.atlas.study import build_study_dataset, export_orange, import_classification
@@ -349,7 +350,12 @@ class AtlasUiData:
                 Path(values.get("output") or "outputs/study_pack"),
                 self.config_path,
                 accounts,
+                bool(values.get("rebuild_derived")),
             )
+        if phase == "reset_project":
+            return reset_project(
+                self.db_path, self.project, confirm=bool(values.get("confirm"))
+            ).to_dict()
         if phase == "export_orange":
             return export_orange(
                 self.db_path, self.project, Path(values.get("output") or "outputs/orange_pack")

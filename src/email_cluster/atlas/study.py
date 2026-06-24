@@ -601,6 +601,7 @@ def build_study_dataset(
     output: Path,
     config_path: Path = Path("config/default.yaml"),
     accounts: list[str] | None = None,
+    rebuild_derived: bool = False,
 ) -> dict[str, Any]:
     from email_cluster.cli.app import import_emails
 
@@ -608,7 +609,13 @@ def build_study_dataset(
     inventory(input_path, db_path, project, output / "reports")
     import_emails(source=input_path, project=project, db=db_path, config=config_path)
     parse_and_clean(db_path, project, config_path, output / "reports")
-    build_conversations(db_path, project, accounts, output / "reports")
+    conversations = build_conversations(
+        db_path,
+        project,
+        accounts,
+        output / "reports",
+        mode="rebuild-derived" if rebuild_derived else "safe",
+    )
     build_index(db_path, project)
     extract_entities(db_path, project, reports=output / "reports")
     build_semantic_docs(db_path, project)
@@ -618,7 +625,10 @@ def build_study_dataset(
             "SELECT 1 FROM atlas_candidate_categories WHERE project_id=?", (pid,)
         ).fetchone():
             heuristic_discovery(db_path, project, reports=output / "reports")
-    return export_study_pack(db_path, project, output)
+    result = export_study_pack(db_path, project, output)
+    result["mode"] = "rebuild-derived" if rebuild_derived else "safe"
+    result["conversation_build"] = conversations
+    return result
 
 
 def import_classification(

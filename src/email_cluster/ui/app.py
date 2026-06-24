@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
+import traceback
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -119,8 +121,25 @@ def create_app(
     async def atlas_run_phase(phase: str, request: Request):
         try:
             return atlas.run_phase(phase, await request.json())
-        except (ValueError, RuntimeError, OSError) as exc:
-            raise HTTPException(409, str(exc)) from exc
+        except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
+            message = str(exc)
+            if isinstance(exc, sqlite3.Error):
+                message = (
+                    "Errore nella ricostruzione delle conversazioni. Il database contiene gia "
+                    "dati collegati; per evitare perdite non sono stati cancellati automaticamente."
+                )
+            raise HTTPException(
+                409,
+                {
+                    "message": message,
+                    "phase": phase,
+                    "next_step": (
+                        "Aggiorna lo studio senza cancellare revisioni oppure ricostruisci i dati "
+                        "derivati creando un backup. Azzera il progetto solo se necessario."
+                    ),
+                    "technical": traceback.format_exc(),
+                },
+            ) from exc
 
     @app.post("/api/atlas/review/{candidate_id}/{action}")
     async def atlas_review_action(candidate_id: int, action: str, request: Request):

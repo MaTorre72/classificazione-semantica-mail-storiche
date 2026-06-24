@@ -23,3 +23,9 @@ Un risultato tecnicamente riuscito non equivale a un risultato corretto: control
 La pipeline tecnica è orchestrata da `build-study-dataset`, ma non viene più presentata come nove tappe utente. I checkpoint interni preparano conversazioni, indice, entità, documenti semantici e proposte; il contratto pubblico è il contenuto di `outputs/study_pack`.
 
 Gli embedding sono opzionali. In loro assenza, TF-IDF + PCA produce coordinate esplorative con un warning esplicito. LLM e rete non sono prerequisiti.
+
+## Cosa succede se rilancio la pipeline?
+
+La modalità predefinita `safe` riusa conversazioni e dati già presenti quando l'archivio è invariato. Se trova nuove email che richiederebbero una ricostruzione, si ferma e non cancella nulla.
+
+`--rebuild-derived` crea un backup SQLite, elimina in ordine soltanto dati ricostruibili e conserva decisioni umane e Atlante finale. `reset-project --confirm` è distruttivo: crea un backup e cancella l'intero progetto.

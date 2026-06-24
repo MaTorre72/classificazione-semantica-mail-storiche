@@ -18,6 +18,7 @@ from email_cluster.atlas.export import export_atlas
 from email_cluster.atlas.inventory import inventory
 from email_cluster.atlas.parsing import parse_and_clean
 from email_cluster.atlas.review import review_action
+from email_cluster.atlas.reset import reset_project
 from email_cluster.atlas.search import build_index, search as atlas_search
 from email_cluster.atlas.semantic_docs import build_semantic_docs
 from email_cluster.atlas.study import build_study_dataset, export_orange, import_classification
@@ -178,9 +179,28 @@ def build_study_dataset_cmd(
     output: Annotated[Path, typer.Option("--output")] = Path("outputs/study_pack"),
     config: Path = Path("config/default.yaml"),
     account: Annotated[list[str] | None, typer.Option("--account")] = None,
+    rebuild_derived: Annotated[bool, typer.Option("--rebuild-derived")] = False,
 ) -> None:
     """Prepara il pacchetto completo per lo studio dell'archivio storico."""
-    show(build_study_dataset(input_path, db, project, output, config, account))
+    try:
+        show(build_study_dataset(input_path, db, project, output, config, account, rebuild_derived))
+    except (ValueError, RuntimeError, OSError) as exc:
+        console.print(f"Errore: {exc}", style="bold red")
+        raise typer.Exit(2) from exc
+
+
+@app.command("reset-project")
+def reset_project_cmd(
+    db: Db,
+    project: Project,
+    confirm: Annotated[bool, typer.Option("--confirm")] = False,
+) -> None:
+    """Azzera i dati Atlas del progetto dopo backup e conferma esplicita."""
+    try:
+        show(reset_project(db, project, confirm=confirm).to_dict())
+    except ValueError as exc:
+        console.print(f"Errore: {exc}", style="bold red")
+        raise typer.Exit(2) from exc
 
 
 @app.command("export-orange")
