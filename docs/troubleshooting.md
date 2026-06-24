@@ -27,3 +27,12 @@ I file email non vengono modificati. Prima di interventi sul database, chiudi la
 ## Foreign key durante la ricostruzione
 
 Non disattivare le foreign key. Rilancia prima **Aggiorna studio**. Se il sistema segnala email nuove o derivati incompatibili, usa **Ricostruisci dati derivati**: viene creato automaticamente un file `.backup-...` accanto al database. **Azzera progetto** cancella anche revisioni e Atlante finale e richiede conferma.
+
+## Errore: Project not found: archivio_storico
+
+Significa che il database esiste ma non contiene il progetto configurato. Accade con un database nuovo oppure dopo **Azzera progetto**. Non è un guasto: la home mostra **Nessuno studio attivo**.
+
+- Usa **Crea nuovo studio** o **Importa archivio** per ripartire.
+- Usa **Seleziona database** se hai aperto il file SQLite sbagliato.
+- **Azzera dati derivati** conserva sempre il progetto e serve per rigenerare conversazioni e analisi.
+- **Azzera progetto** elimina invece lo studio completo dopo backup e conferma.

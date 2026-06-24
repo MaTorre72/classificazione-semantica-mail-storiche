@@ -22,3 +22,5 @@ Non sposta email, non crea regole quotidiane, non integra Thunderbird o Virgilio
 **Ricostruisci dati derivati** crea prima un backup e rigenera conversazioni, documenti, embedding, entità e proposte. Le decisioni umane e l'Atlante finale restano nel database.
 
 **Azzera progetto** richiede conferma esplicita, crea un backup e cancella tutto il progetto. Usalo soltanto per ricominciare davvero.
+
+Dopo **Azzera progetto**, la GUI passa normalmente allo stato **Nessuno studio attivo**. Da lì puoi creare un nuovo studio, importare un archivio o scegliere un altro database; non è necessario riavviare la console.

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from email_cluster.ui.data import UiData
-from email_cluster.ui.atlas_data import AtlasUiData
+from email_cluster.ui.atlas_data import AtlasUiData, MissingProjectError
 from email_cluster.ui.terminology import TERMS, area_name, status_name
 
 
@@ -26,6 +26,27 @@ def create_app(
     )
     app.state.data = data
     app.state.atlas = atlas
+
+    @app.exception_handler(ValueError)
+    async def missing_data_handler(request: Request, exc: ValueError):
+        payload = {
+            "ok": False,
+            "error_type": "missing_project" if "Project not found" in str(exc) else "missing_data",
+            "message": (
+                f"Il progetto {project} non esiste. Crea un nuovo studio o importa un archivio."
+                if "Project not found" in str(exc)
+                else str(exc)
+            ),
+            "technical_detail": str(exc),
+        }
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(payload, status_code=409)
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'><title>Dati non disponibili</title>"
+            f"<h1>Dati non disponibili</h1><p>{payload['message']}</p>"
+            "<p><a href='/'>Torna allo Studio Workbench</a></p>",
+            status_code=409,
+        )
 
     def page(request: Request, template: str, **context: Any) -> HTMLResponse:
         base = {
@@ -72,6 +93,16 @@ def create_app(
     @app.get("/advanced", response_class=HTMLResponse)
     def advanced(request: Request):
         return page(request, "advanced.html")
+
+    @app.get("/help/troubleshooting", response_class=HTMLResponse)
+    def troubleshooting():
+        text = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
+        import html
+
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'><title>Troubleshooting</title>"
+            f"<pre style='white-space:pre-wrap;max-width:900px;margin:30px auto'>{html.escape(text)}</pre>"
+        )
 
     @app.get("/atlas/conversations", response_class=HTMLResponse)
     def atlas_conversations(request: Request):
@@ -121,6 +152,17 @@ def create_app(
     async def atlas_run_phase(phase: str, request: Request):
         try:
             return atlas.run_phase(phase, await request.json())
+        except MissingProjectError as exc:
+            raise HTTPException(
+                409,
+                {
+                    "ok": False,
+                    "error_type": "missing_project",
+                    "message": str(exc),
+                    "technical_detail": f"Project not found: {project}",
+                    "next_step": "Crea un nuovo studio o importa un archivio.",
+                },
+            ) from exc
         except (ValueError, RuntimeError, OSError, sqlite3.Error) as exc:
             message = str(exc)
             if isinstance(exc, sqlite3.Error):

@@ -16,7 +16,7 @@ from email_cluster.atlas.reset import reset_project
 from email_cluster.atlas.search import build_index, search
 from email_cluster.atlas.semantic_docs import build_semantic_docs
 from email_cluster.atlas.study import build_study_dataset, export_orange, import_classification
-from email_cluster.storage.database import connect
+from email_cluster.storage.database import connect, init_db
 from email_cluster.storage.repository import Repository
 
 METHOD_LABELS = {
@@ -24,6 +24,10 @@ METHOD_LABELS = {
     "subject_participants_date": "Fallback: oggetto, partecipanti e data",
     "isolated": "Messaggio isolato",
 }
+
+
+class MissingProjectError(ValueError):
+    """The configured study does not exist in the selected database."""
 
 
 class AtlasUiData:
@@ -34,13 +38,45 @@ class AtlasUiData:
         self.project = project
         self.config_path = config_path
         self.reports_dir = Path("reports")
+        init_db(db_path)
 
-    def _project_id(self, con) -> int:
-        return Repository(con).project_id(self.project)
+    def _project_id_or_none(self, con) -> int | None:
+        try:
+            return Repository(con).project_id(self.project)
+        except ValueError:
+            return None
+
+    def _require_project_id(self, con) -> int:
+        pid = self._project_id_or_none(con)
+        if pid is None:
+            raise MissingProjectError(
+                f"Il progetto {self.project} non esiste. Crea un nuovo studio o importa un archivio."
+            )
+        return pid
+
+    @staticmethod
+    def _empty_conversation_summary() -> dict[str, Any]:
+        return {
+            "conversations": 0,
+            "emails": 0,
+            "isolated": 0,
+            "multi_message": 0,
+            "incoming": 0,
+            "outgoing": 0,
+            "header_based": 0,
+            "fallback_based": 0,
+            "low_confidence": 0,
+            "with_warnings": 0,
+            "isolated_percent": 0.0,
+            "report_available": False,
+            "warning": "Nessun progetto attivo: non ci sono conversazioni da analizzare.",
+        }
 
     def conversation_summary(self) -> dict[str, Any]:
         with connect(self.db_path) as con:
-            pid = self._project_id(con)
+            pid = self._project_id_or_none(con)
+            if pid is None:
+                return self._empty_conversation_summary()
             row = con.execute(
                 """SELECT count(*) conversations,coalesce(sum(message_count),0) emails,
                           sum(message_count=1) isolated,sum(message_count>1) multi_message,
@@ -97,7 +133,9 @@ class AtlasUiData:
 
     def conversations(self, limit: int = 500) -> list[dict[str, Any]]:
         with connect(self.db_path) as con:
-            pid = self._project_id(con)
+            pid = self._project_id_or_none(con)
+            if pid is None:
+                return []
             rows = con.execute(
                 """SELECT id,subject_normalized,date_start,date_end,message_count,incoming_count,
                           outgoing_count,attachments_count,participants_json,confidence,
@@ -123,7 +161,7 @@ class AtlasUiData:
 
     def conversation_detail(self, conversation_id: int) -> dict[str, Any]:
         with connect(self.db_path) as con:
-            pid = self._project_id(con)
+            pid = self._require_project_id(con)
             row = con.execute(
                 "SELECT * FROM atlas_conversations WHERE id=? AND project_id=?",
                 (conversation_id, pid),
@@ -156,10 +194,39 @@ class AtlasUiData:
         return {"conversation": conversation, "messages": messages}
 
     def status(self) -> dict[str, Any]:
+        with connect(self.db_path) as con:
+            pid = self._project_id_or_none(con)
+            if pid is None:
+                summary = self._empty_conversation_summary()
+                counts = {
+                    "emails": 0,
+                    "cleaned": 0,
+                    "conversations": 0,
+                    "entities": 0,
+                    "semantic_docs": 0,
+                    "candidates": 0,
+                    "approved": 0,
+                }
+                return counts | {
+                    "project_exists": False,
+                    "state": "missing_project",
+                    "message": (f"Nessun progetto presente o progetto {self.project} non trovato."),
+                    "next_action": "Importa un archivio o crea un nuovo studio.",
+                    "email_count": 0,
+                    "conversation_count": 0,
+                    "candidate_category_count": 0,
+                    "approved_category_count": 0,
+                    "indexed": False,
+                    "phases": [],
+                    "next_phase": None,
+                    "conversation_summary": summary,
+                    "conversation_quality": self.conversation_quality(summary),
+                }
+
         summary = self.conversation_summary()
         quality = self.conversation_quality(summary)
         with connect(self.db_path) as con:
-            pid = self._project_id(con)
+            pid = self._require_project_id(con)
 
             def scalar(sql: str) -> int:
                 return int(con.execute(sql, (pid,)).fetchone()[0] or 0)
@@ -288,6 +355,8 @@ class AtlasUiData:
             phases[-1],
         )
         return counts | {
+            "project_exists": True,
+            "state": "ready" if counts["emails"] else "empty_project",
             "indexed": indexed,
             "phases": phases,
             "next_phase": next_phase,
@@ -297,7 +366,9 @@ class AtlasUiData:
 
     def candidates(self) -> list[dict[str, Any]]:
         with connect(self.db_path) as con:
-            pid = self._project_id(con)
+            pid = self._project_id_or_none(con)
+            if pid is None:
+                return []
             return [
                 dict(row)
                 for row in con.execute(
@@ -308,7 +379,9 @@ class AtlasUiData:
 
     def approved(self) -> list[dict[str, Any]]:
         with connect(self.db_path) as con:
-            pid = self._project_id(con)
+            pid = self._project_id_or_none(con)
+            if pid is None:
+                return []
             return [
                 dict(row)
                 for row in con.execute(
@@ -351,6 +424,10 @@ class AtlasUiData:
                 self.config_path,
                 accounts,
                 bool(values.get("rebuild_derived")),
+            )
+        if not self.status()["project_exists"]:
+            raise MissingProjectError(
+                f"Il progetto {self.project} non esiste. Crea un nuovo studio o importa un archivio."
             )
         if phase == "reset_project":
             return reset_project(
@@ -399,9 +476,13 @@ class AtlasUiData:
     def review(
         self, candidate_id: int, action: str, name: str | None, notes: str
     ) -> dict[str, Any]:
+        if not self.status()["project_exists"]:
+            raise MissingProjectError(f"Il progetto {self.project} non esiste")
         return review_action(self.db_path, self.project, candidate_id, action, name, notes)
 
     def search(self, query: str) -> list[dict[str, Any]]:
+        if not self.status()["project_exists"]:
+            return []
         return search(self.db_path, query, self.project)
 
     def report(self, name: str) -> str:
