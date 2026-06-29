@@ -104,6 +104,16 @@ def create_app(
             f"<pre style='white-space:pre-wrap;max-width:900px;margin:30px auto'>{html.escape(text)}</pre>"
         )
 
+    @app.get("/help/thunderbird", response_class=HTMLResponse)
+    def thunderbird_help():
+        text = Path("docs/guida_uso_completa.md").read_text(encoding="utf-8")
+        import html
+
+        return HTMLResponse(
+            "<!doctype html><meta charset='utf-8'><title>Guida Email Atlas</title>"
+            f"<pre style='white-space:pre-wrap;max-width:1000px;margin:30px auto'>{html.escape(text)}</pre>"
+        )
+
     @app.get("/atlas/conversations", response_class=HTMLResponse)
     def atlas_conversations(request: Request):
         summary = atlas.conversation_summary()

@@ -13,13 +13,7 @@ if not exist "%APP%" (
     exit /b 1
 )
 
-if not exist "%DB%" (
-    echo ERRORE: database non trovato: %DB%
-    pause
-    exit /b 1
-)
-
-echo Avvio Archivio storico...
+echo Avvio interfaccia grafica minima Email Atlas...
 echo La console sara disponibile su %URL%
 start "" "%URL%"
 "%APP%" ui --project archivio_storico --db "%DB%" --no-open-browser

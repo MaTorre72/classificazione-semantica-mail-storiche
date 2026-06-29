@@ -16,6 +16,11 @@ from email_cluster.atlas.reset import reset_project
 from email_cluster.atlas.search import build_index, search
 from email_cluster.atlas.semantic_docs import build_semantic_docs
 from email_cluster.atlas.study import build_study_dataset, export_orange, import_classification
+from email_cluster.atlas.workspace_study import (
+    build_atlas_from_workspace,
+    export_orange_workspace,
+    run_study,
+)
 from email_cluster.storage.database import connect, init_db
 from email_cluster.storage.repository import Repository
 
@@ -412,6 +417,19 @@ class AtlasUiData:
     def run_phase(self, phase: str, values: dict[str, Any]) -> dict[str, Any]:
         reports = Path(values.get("reports") or self.reports_dir)
         input_path = Path(values.get("input_path") or "mail")
+        workspace = Path(values.get("workspace") or "workspace_studio_email")
+        if phase == "workspace_study":
+            return run_study(
+                input_path,
+                workspace,
+                resume=True,
+                attachments_text=bool(values.get("attachments_text", True)),
+                max_attachment_mb=int(values.get("max_attachment_mb") or 20),
+            )
+        if phase == "workspace_orange":
+            return export_orange_workspace(workspace)
+        if phase == "workspace_atlas":
+            return build_atlas_from_workspace(workspace)
         if phase == "build_study":
             accounts = [
                 item.strip() for item in values.get("accounts", "").split(",") if item.strip()

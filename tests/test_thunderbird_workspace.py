@@ -6,6 +6,9 @@ import mailbox
 from email.message import EmailMessage
 from pathlib import Path
 
+import yaml
+from fastapi.testclient import TestClient
+
 from email_cluster.atlas.workspace_study import (
     CLASSIFICATION_FIELDS,
     CONVERSATION_FIELDS,
@@ -14,6 +17,7 @@ from email_cluster.atlas.workspace_study import (
     run_study,
 )
 from email_cluster.ingestion.scanner import scan_local_folder
+from email_cluster.ui.app import create_app
 
 
 def message(
@@ -173,12 +177,12 @@ def test_pipeline_rerun_empty_workspace_atlas_and_orange(tmp_path: Path) -> None
     )
     assert all(
         label in workflows
-            for label in (
-                "Workflow 1 - Mappa conversazioni",
-                "Workflow 2 - Topic testuali",
-                "Workflow 3 - Document Map",
-                "Workflow 4 - Reti",
-            )
+        for label in (
+            "Workflow 1 - Mappa conversazioni",
+            "Workflow 2 - Topic testuali",
+            "Workflow 3 - Document Map",
+            "Workflow 4 - Reti",
+        )
     )
 
 
@@ -195,3 +199,28 @@ def test_invalid_input_and_empty_workspace_are_readable(tmp_path: Path) -> None:
         pass
     else:
         raise AssertionError("empty workspace accepted")
+
+
+def test_minimal_gui_runs_the_workspace_pipeline(tmp_path: Path) -> None:
+    snapshot = make_snapshot(tmp_path)
+    workspace = tmp_path / "gui-workspace"
+    db = tmp_path / "gui.sqlite"
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml.safe_dump({"database": {"path": str(db)}}), encoding="utf-8")
+    client = TestClient(create_app(db, "archivio_storico", config))
+    home = client.get("/")
+    assert home.status_code == 200
+    assert "Studio snapshot Thunderbird / MBOX" in home.text
+    assert "Crea o aggiorna studio" in home.text
+    response = client.post(
+        "/api/atlas/run/workspace_study",
+        json={
+            "input_path": str(snapshot),
+            "workspace": str(workspace),
+            "attachments_text": False,
+            "max_attachment_mb": 10,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["conversations"] > 0
+    assert (workspace / "study_report.html").exists()

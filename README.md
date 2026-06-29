@@ -16,8 +16,11 @@ La GUI ha quattro sezioni:
 Avvio Windows:
 
 ```text
+EMAIL_ATLAS.bat      menu guidato consigliato
 AVVIA_CONSOLE.bat
 ```
+
+Per una spiegazione completa, parti da [Guida completa all'uso](docs/guida_uso_completa.md).
 
 ## Comandi principali
 
@@ -46,6 +49,7 @@ Se gli embedding non sono disponibili, la mappa usa TF-IDF e PCA e lo dichiara n
 
 - [Studio Workbench](docs/studio_workbench.md)
 - [Snapshot Thunderbird/MBOX](docs/thunderbird_mbox_study.md)
+- [Guida completa all'uso](docs/guida_uso_completa.md)
 - [Esportazione Orange](docs/orange_export.md)
 - [Esplorazione visuale](docs/visual_exploration.md)
 - [Classification Workspace](docs/classification_workspace.md)
