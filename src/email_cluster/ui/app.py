@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 import sqlite3
-import traceback
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -183,13 +182,19 @@ def create_app(
             raise HTTPException(
                 409,
                 {
+                    "ok": False,
+                    "error_type": "workspace_integrity"
+                    if isinstance(exc, sqlite3.Error)
+                    or "workspace" in str(exc).lower()
+                    or "database" in str(exc).lower()
+                    else "operation_error",
                     "message": message,
                     "phase": phase,
                     "next_step": (
                         "Aggiorna lo studio senza cancellare revisioni oppure ricostruisci i dati "
                         "derivati creando un backup. Azzera il progetto solo se necessario."
                     ),
-                    "technical": traceback.format_exc(),
+                    "technical": f"{type(exc).__name__}: {exc}",
                 },
             ) from exc
 

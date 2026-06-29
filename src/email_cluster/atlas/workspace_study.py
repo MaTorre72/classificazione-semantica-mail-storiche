@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import math
+import sqlite3
 import zipfile
 from collections import Counter
 from datetime import datetime
@@ -31,6 +32,11 @@ from email_cluster.atlas.study import (
 from email_cluster.ingestion.scanner import scan_local_folder
 from email_cluster.storage.database import connect, init_db
 from email_cluster.storage.repository import Repository
+from email_cluster.storage.workspace_health import (
+    WorkspaceIntegrityError,
+    doctor_workspace,
+    ensure_project,
+)
 
 STAGES = [
     "scan_input",
@@ -236,7 +242,17 @@ def run_study(
     if not candidates:
         raise ValueError("Nessun file MBOX/EML trovato. I file .msf e gli indici vengono ignorati.")
     config = _workspace_config(workspace, attachments_text, max_attachment_mb)
-    init_db(db)
+    try:
+        init_db(db)
+        with connect(db) as con:
+            ensure_project(con, project)
+        health = doctor_workspace(db, project)
+    except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
+        raise WorkspaceIntegrityError(
+            "Workspace non inizializzabile. Esegui doctor-workspace o scegli una cartella nuova."
+        ) from exc
+    if not health["ok"]:
+        raise WorkspaceIntegrityError(f"Workspace incoerente. {health['next_step']}")
     from email_cluster.cli.app import import_emails
 
     import_emails(source=input_path, project=project, db=db, config=config)

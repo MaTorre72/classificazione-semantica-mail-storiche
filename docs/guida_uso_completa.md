@@ -67,7 +67,31 @@ Il menu propone:
 2. costruire l'Atlante finale;
 3. generare il pacchetto Orange;
 4. aprire la GUI minima;
-5. aprire questa guida.
+5. aprire questa guida;
+6. controllare l'integrita del workspace;
+7. riparare in modo conservativo schema o progetto mancanti.
+
+## Controllo e riparazione del workspace
+
+Se lo studio segnala un database incoerente, non cancellare il database e non disattivare le
+foreign key. Esegui:
+
+```powershell
+.\.venv\Scripts\email-atlas.exe doctor-workspace --workspace "workspace_studio_email"
+```
+
+Il doctor verifica progetto, `source_files`, vincoli SQLite e tabelle derivate. Se propone una
+riparazione, usa:
+
+```powershell
+.\.venv\Scripts\email-atlas.exe repair-workspace --workspace "workspace_studio_email"
+```
+
+La riparazione crea prima un file `email_atlas.sqlite.backup-...`. Ricrea soltanto schema o
+progetto mancanti: non elimina righe. Se esistono violazioni delle foreign key, si ferma e chiede
+di usare un workspace nuovo o un backup integro.
+
+Da Windows puoi usare direttamente `CONTROLLO_WORKSPACE.bat` e `RIPARA_WORKSPACE.bat`.
 
 Puoi anche usare direttamente:
 
@@ -75,6 +99,8 @@ Puoi anche usare direttamente:
 - `COSTRUISCI_ATLANTE.bat`;
 - `ESPORTA_ORANGE.bat`;
 - `AVVIA_CONSOLE.bat`.
+- `CONTROLLO_WORKSPACE.bat`;
+- `RIPARA_WORKSPACE.bat`.
 
 ## 4. Primo studio da riga di comando
 

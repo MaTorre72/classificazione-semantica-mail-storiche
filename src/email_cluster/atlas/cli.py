@@ -31,6 +31,7 @@ from email_cluster.atlas.workspace_study import (
 from email_cluster.atlas.update import update_archive
 from email_cluster.storage.database import connect
 from email_cluster.storage.repository import Repository
+from email_cluster.storage.workspace_health import doctor_workspace, repair_workspace
 
 app = typer.Typer(help="Atlante semantico locale fondato sulle Conversazioni storiche.")
 console = Console()
@@ -259,6 +260,31 @@ def study_cmd(
                 embedding_model=embedding_model,
             )
         )
+    except (ValueError, RuntimeError, OSError) as exc:
+        console.print(f"Errore: {exc}", style="bold red")
+        raise typer.Exit(2) from exc
+
+
+@app.command("doctor-workspace")
+def doctor_workspace_cmd(
+    workspace: Annotated[Path, typer.Option("--workspace")],
+    project: Annotated[str, typer.Option("--project")] = "studio",
+) -> None:
+    """Verifica schema, progetto, foreign key e tabelle derivate del workspace."""
+    result = doctor_workspace(workspace / "email_atlas.sqlite", project)
+    show(result)
+    if not result["ok"]:
+        raise typer.Exit(2)
+
+
+@app.command("repair-workspace")
+def repair_workspace_cmd(
+    workspace: Annotated[Path, typer.Option("--workspace")],
+    project: Annotated[str, typer.Option("--project")] = "studio",
+) -> None:
+    """Ripara solo schema/progetto mancanti, creando sempre un backup del database esistente."""
+    try:
+        show(repair_workspace(workspace / "email_atlas.sqlite", project))
     except (ValueError, RuntimeError, OSError) as exc:
         console.print(f"Errore: {exc}", style="bold red")
         raise typer.Exit(2) from exc

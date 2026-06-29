@@ -15,6 +15,10 @@ from email_cluster.models import CleanedText, ParsedEmail
 from email_cluster.context.builder import SemanticContext
 
 
+class InvalidReferenceError(ValueError):
+    """A referenced project, source file, or email does not exist."""
+
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -66,6 +70,10 @@ class Repository:
         *, file_size: int | None = None, modified_at: str | None = None,
         emails_found: int = 0, emails_imported: int = 0, errors_count: int = 0,
     ) -> int:
+        if not self.con.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
+            raise InvalidReferenceError(
+                "Project ID non valido: importazione sorgente interrotta prima della scrittura."
+            )
         self.con.execute(
             """
             INSERT INTO source_files (
@@ -96,6 +104,15 @@ class Repository:
         return bool(row and row["file_hash"] == file_hash and row["status"] == "ok")
 
     def insert_email(self, project_id: int, source_file_id: int, parsed: ParsedEmail) -> int | None:
+        if not self.con.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
+            raise InvalidReferenceError("Project ID non valido durante importazione email.")
+        if not self.con.execute(
+            "SELECT 1 FROM source_files WHERE id=? AND project_id=?",
+            (source_file_id, project_id),
+        ).fetchone():
+            raise InvalidReferenceError(
+                "Source file ID non valido o appartenente a un altro progetto."
+            )
         try:
             cur = self.con.execute(
                 """
@@ -165,6 +182,20 @@ class Repository:
         source_file_id: int | None = None,
         email_id: int | None = None,
     ) -> None:
+        if project_id is not None and not self.con.execute(
+            "SELECT 1 FROM projects WHERE id=?", (project_id,)
+        ).fetchone():
+            project_id = None
+            source_file_id = None
+            email_id = None
+        if source_file_id is not None and not self.con.execute(
+            "SELECT 1 FROM source_files WHERE id=?", (source_file_id,)
+        ).fetchone():
+            source_file_id = None
+        if email_id is not None and not self.con.execute(
+            "SELECT 1 FROM emails WHERE id=?", (email_id,)
+        ).fetchone():
+            email_id = None
         self.con.execute(
             """
             INSERT INTO errors (

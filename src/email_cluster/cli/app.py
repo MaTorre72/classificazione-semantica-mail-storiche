@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import importlib.util
 import platform
+import sqlite3
 import threading
 import webbrowser
 from itertools import islice, product
@@ -27,7 +28,8 @@ from email_cluster.export.writers import export_cluster_review, export_emails, w
 from email_cluster.ingestion.scanner import file_sha256, scan_local_folder
 from email_cluster.parsing.email_parser import parse_eml, parse_mbox
 from email_cluster.storage.database import connect, init_db as create_schema
-from email_cluster.storage.repository import Repository, blob_to_embedding
+from email_cluster.storage.repository import InvalidReferenceError, Repository, blob_to_embedding
+from email_cluster.storage.workspace_health import WorkspaceIntegrityError, ensure_project
 from email_cluster.cli.review_commands import register_review_commands
 from email_cluster.cli.workbench_commands import register_workbench_commands
 
@@ -95,7 +97,7 @@ def import_emails(
     errors = 0
     with connect(db) as con:
         repo = Repository(con)
-        project_id = repo.get_or_create_project(project)
+        project_id = ensure_project(con, project)
         for candidate in scan_local_folder(source):
             candidate_path = str(candidate.path.resolve())
             file_hash = file_sha256(candidate.path)
@@ -103,15 +105,21 @@ def import_emails(
                 unchanged_files += 1
                 continue
             stat = candidate.path.stat()
-            source_file_id = repo.upsert_source_file(
-                project_id,
-                candidate_path,
-                candidate.file_type,
-                file_hash,
-                "importing",
-                file_size=stat.st_size,
-                modified_at=str(stat.st_mtime_ns),
-            )
+            try:
+                source_file_id = repo.upsert_source_file(
+                    project_id,
+                    candidate_path,
+                    candidate.file_type,
+                    file_hash,
+                    "importing",
+                    file_size=stat.st_size,
+                    modified_at=str(stat.st_mtime_ns),
+                )
+            except (sqlite3.IntegrityError, ValueError) as exc:
+                raise WorkspaceIntegrityError(
+                    "Impossibile registrare il file sorgente: progetto o database incoerente. "
+                    "Esegui email-atlas doctor-workspace sul workspace."
+                ) from exc
             found_for_file = 0
             imported_for_file = 0
             errors_for_file = 0
@@ -138,6 +146,8 @@ def import_emails(
                         else:
                             imported += 1
                             imported_for_file += 1
+                    except InvalidReferenceError:
+                        raise
                     except Exception as exc:  # noqa: BLE001 - isolation per malformed message
                         errors += 1
                         errors_for_file += 1
@@ -148,6 +158,11 @@ def import_emails(
                     emails_found=found_for_file, emails_imported=imported_for_file,
                     errors_count=errors_for_file,
                 )
+            except InvalidReferenceError as exc:
+                raise WorkspaceIntegrityError(
+                    "Importazione interrotta: un riferimento a progetto o sorgente non e valido. "
+                    "Esegui doctor-workspace prima di riprovare."
+                ) from exc
             except Exception as exc:  # noqa: BLE001 - isolation per source file
                 errors += 1
                 repo.record_error("ingestion", exc, project_id, source_file_id)
