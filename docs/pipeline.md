@@ -31,3 +31,7 @@ La modalità predefinita `safe` riusa conversazioni e dati già presenti quando 
 `--rebuild-derived` crea un backup SQLite, elimina in ordine soltanto dati ricostruibili e conserva decisioni umane e Atlante finale. `reset-project --confirm` è distruttivo: crea un backup e cancella l'intero progetto.
 
 Un database vuoto e un progetto assente sono stati validi. Il read-model GUI restituisce conteggi zero senza interrogare tabelle derivate; soltanto le operazioni che richiedono uno studio già esistente vengono bloccate con un errore `missing_project`. Il comando di costruzione può creare nuovamente il progetto dallo stesso archivio.
+
+## Pipeline snapshot MBOX
+
+Il comando principale `email-atlas study` usa una copia offline delle cartelle Thunderbird. Le conversazioni sono l'unità tecnica; topic e categorie operative sono l'unità di revisione. BERTopic viene usato soltanto se disponibile e con dati locali; altrimenti il fallback deterministico è TF-IDF + SVD + KMeans. Gli allegati lunghi non vengono incorporati integralmente: semantic text usa nomi, keyword ed estratti limitati.

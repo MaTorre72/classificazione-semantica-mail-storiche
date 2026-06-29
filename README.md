@@ -22,6 +22,11 @@ AVVIA_CONSOLE.bat
 ## Comandi principali
 
 ```powershell
+email-atlas study --input "D:\snapshot_thunderbird_mbox" --workspace "D:\studio_email"
+email-atlas build-atlas --workspace "D:\studio_email"
+email-atlas export-orange --workspace "D:\studio_email"
+
+# Comandi legacy compatibili con database/progetto
 email-atlas build-study-dataset --input mail --db data/email_cluster.sqlite --project archivio_storico --output outputs/study_pack
 email-atlas export-orange --db data/email_cluster.sqlite --project archivio_storico --output outputs/orange_pack
 email-atlas import-classification --db data/email_cluster.sqlite --project archivio_storico --file outputs/study_pack/classification_workspace.csv --output outputs/atlas_finale
@@ -40,6 +45,7 @@ Se gli embedding non sono disponibili, la mappa usa TF-IDF e PCA e lo dichiara n
 ## Documentazione
 
 - [Studio Workbench](docs/studio_workbench.md)
+- [Snapshot Thunderbird/MBOX](docs/thunderbird_mbox_study.md)
 - [Esportazione Orange](docs/orange_export.md)
 - [Esplorazione visuale](docs/visual_exploration.md)
 - [Classification Workspace](docs/classification_workspace.md)

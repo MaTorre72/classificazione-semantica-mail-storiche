@@ -22,6 +22,12 @@ from email_cluster.atlas.reset import reset_project
 from email_cluster.atlas.search import build_index, search as atlas_search
 from email_cluster.atlas.semantic_docs import build_semantic_docs
 from email_cluster.atlas.study import build_study_dataset, export_orange, import_classification
+from email_cluster.atlas.workspace_study import (
+    STAGES,
+    build_atlas_from_workspace,
+    export_orange_workspace,
+    run_study,
+)
 from email_cluster.atlas.update import update_archive
 from email_cluster.storage.database import connect
 from email_cluster.storage.repository import Repository
@@ -205,12 +211,69 @@ def reset_project_cmd(
 
 @app.command("export-orange")
 def export_orange_cmd(
-    db: Db,
-    project: Project,
+    db: Annotated[Path | None, typer.Option("--db")] = None,
+    project: Annotated[str | None, typer.Option("--project")] = None,
     output: Annotated[Path, typer.Option("--output")] = Path("outputs/orange_pack"),
+    workspace: Annotated[Path | None, typer.Option("--workspace")] = None,
 ) -> None:
     """Esporta conversazioni, termini, entita e rete in CSV per Orange."""
+    if workspace is not None:
+        show(export_orange_workspace(workspace))
+        return
+    if db is None or project is None:
+        raise typer.BadParameter("Usa --workspace oppure specifica --db e --project")
     show(export_orange(db, project, output))
+
+
+@app.command("study")
+def study_cmd(
+    input_path: Annotated[Path, typer.Option("--input")],
+    workspace: Annotated[Path, typer.Option("--workspace")],
+    stages: Annotated[str, typer.Option("--stages")] = "",
+    resume: Annotated[bool, typer.Option("--resume/--no-resume")] = True,
+    rebuild_stage: Annotated[str | None, typer.Option("--rebuild-stage")] = None,
+    no_attachments_text: Annotated[bool, typer.Option("--no-attachments-text")] = False,
+    with_attachments_text: Annotated[bool, typer.Option("--with-attachments-text")] = False,
+    max_attachment_mb: Annotated[int, typer.Option("--max-attachment-mb")] = 20,
+    sample_size: Annotated[int | None, typer.Option("--sample-size")] = None,
+    embedding_provider: Annotated[str, typer.Option("--embedding-provider")] = "none",
+    embedding_model: Annotated[str, typer.Option("--embedding-model")] = "",
+) -> None:
+    """Studia uno snapshot Thunderbird/MBOX e produce un workspace autonomo."""
+    selected = [item.strip() for item in stages.split(",") if item.strip()] or None
+    if stages.strip().lower() == "list":
+        show({"stages": STAGES})
+        return
+    try:
+        show(
+            run_study(
+                input_path,
+                workspace,
+                stages=selected,
+                resume=resume,
+                rebuild_stage=rebuild_stage,
+                attachments_text=with_attachments_text or not no_attachments_text,
+                max_attachment_mb=max_attachment_mb,
+                sample_size=sample_size,
+                embedding_provider=embedding_provider,
+                embedding_model=embedding_model,
+            )
+        )
+    except (ValueError, RuntimeError, OSError) as exc:
+        console.print(f"Errore: {exc}", style="bold red")
+        raise typer.Exit(2) from exc
+
+
+@app.command("build-atlas")
+def build_atlas_cmd(
+    workspace: Annotated[Path, typer.Option("--workspace")],
+) -> None:
+    """Genera l'Atlante finale dalle decisioni del workspace."""
+    try:
+        show(build_atlas_from_workspace(workspace))
+    except (ValueError, OSError, KeyError) as exc:
+        console.print(f"Errore: {exc}", style="bold red")
+        raise typer.Exit(2) from exc
 
 
 @app.command("import-classification")
