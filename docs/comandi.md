@@ -51,7 +51,9 @@ Ripara solo dopo il doctor: il comando crea un backup e si ferma sulle violazion
 | `COSTRUISCI_ATLANTE.bat` | Atlante dalle decisioni revisionate. |
 | `ESPORTA_ORANGE.bat` | Export Orange facoltativo. |
 | `AVVIA_CONSOLE.bat` | GUI minima facoltativa. |
-| `start_gui.bat` | Interfaccia legacy, non consigliata. |
+
+Il vecchio `start_gui.bat` della GUI Tkinter è conservato in `archive/windows-launchers/` e non
+fa parte dei comandi operativi correnti.
 
 I comandi `email-cluster` restano disponibili per workflow precedenti, ricerca e clustering, ma
 non sono necessari per un nuovo studio Email Atlas.

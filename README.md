@@ -29,6 +29,9 @@ EMAIL_ATLAS.bat      menu guidato e punto di ingresso consigliato
 AVVIA_CONSOLE.bat    interfaccia grafica minima, facoltativa
 ```
 
+Gli altri launcher correnti sono richiamati dal menu principale. Il vecchio launcher Tkinter è
+conservato in `archive/windows-launchers/` e non va usato per un nuovo studio.
+
 Per una spiegazione completa, parti da [Guida completa all'uso](docs/guida_uso_completa.md).
 
 ## Comandi principali

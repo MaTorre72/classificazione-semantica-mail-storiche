@@ -28,5 +28,5 @@ if errorlevel 1 (
 )
 echo.
 echo Studio completato: %WORKSPACE%
-if exist "%WORKSPACE%\study_report.html" start "" "%WORKSPACE%\study_report.html"
+if exist "%WORKSPACE%\study_report.html" if not defined EMAIL_ATLAS_NO_OPEN start "" "%WORKSPACE%\study_report.html"
 exit /b 0

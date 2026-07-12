@@ -11,6 +11,19 @@ Backlog persistente ordinato per priorita. Ogni ciclo autonomo deve scegliere un
 
 ## Task
 
+### EA-CLEANUP-LAUNCHERS-AND-LEGACY
+
+- Area: repository-maintenance
+- Priorita: P1
+- Stato: done
+- Titolo: verificare launcher Windows e archiviare file superati nelle sottocartelle
+- Descrizione: provare realmente il percorso BAT su fixture locale, mantenere solo i launcher correnti alla radice e archiviare launcher e rapporti storici senza cancellare dati o moduli ancora referenziati.
+- File coinvolti: `*.bat`, `archive/`, `reports/archive/`, `tests/test_windows_launchers.py`, `.gitignore`
+- Criteri di accettazione: menu e launcher specializzati verificati; GUI Tkinter legacy archiviata; report progettuali storici archiviati; workspace locali ignorati; moduli ancora importati o testati preservati
+- Rischio: basso
+- Dipendenze: `EA-DOCS-OPERATOR-MANUAL`
+- Note ultimo ciclo: 2026-07-12: menu, study, doctor, Orange e build-atlas verificati su fixture locale; repair verificato nel percorso di annullamento sicuro; `email-cluster ui --help` conferma la console web; vecchio `start_gui.bat` e due report storici archiviati.
+
 ### EA-DOCS-OPERATOR-MANUAL
 
 - Area: documentation

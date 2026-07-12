@@ -2,6 +2,10 @@
 setlocal
 cd /d "%~dp0"
 set "ATLAS=.venv\Scripts\email-atlas.exe"
+if not exist "%ATLAS%" (
+  echo ERRORE: ambiente non pronto.
+  exit /b 1
+)
 set /p "WORKSPACE=Cartella workspace [workspace_studio_email]: "
 if "%WORKSPACE%"=="" set "WORKSPACE=workspace_studio_email"
 if not exist "%WORKSPACE%\workspace.json" (
@@ -11,5 +15,5 @@ if not exist "%WORKSPACE%\workspace.json" (
 "%ATLAS%" export-orange --workspace "%WORKSPACE%"
 if errorlevel 1 exit /b 1
 echo Pacchetto Orange creato in: %WORKSPACE%\orange
-start "" "%WORKSPACE%\orange"
+if not defined EMAIL_ATLAS_NO_OPEN start "" "%WORKSPACE%\orange"
 exit /b 0

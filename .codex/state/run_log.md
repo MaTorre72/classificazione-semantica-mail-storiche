@@ -1,5 +1,15 @@
 # Run Log
 
+## 2026-07-12 - launcher Windows verificati e residui storici archiviati
+
+- Task: `EA-CLEANUP-LAUNCHERS-AND-LEGACY`
+- Esito: completed
+- Modifiche: mantenuti sette `.bat` correnti alla radice; aggiunto `EMAIL_ATLAS_NO_OPEN` per smoke non interattivi; aggiunti controlli ambiente mancanti; archiviati il launcher Tkinter `start_gui.bat` e due report progettuali storici; aggiunto `wsp_*/` a `.gitignore` senza cancellare il workspace locale dell'utente.
+- Verifiche eseguite: menu exit; studio completo su 6 fixture EML; doctor integro; export Orange; build-atlas; annullamento prudente repair; `email-cluster ui --help`; test automatici dei launcher; scansione riferimenti e import dei moduli legacy.
+- Evidenze: study completato con 12/12 stage, 5 conversazioni e 2 topic; doctor con foreign key attive e nessuna violazione; Orange con otto file; Atlante con cinque formati.
+- Rischi/limiti: la console web non è stata lasciata in esecuzione durante il test; il suo comando e le opzioni sono stati verificati dall'help. I moduli storicamente denominati v2/v3/ui restano attivi perché sono importati e coperti da regressioni.
+- Prossimo task suggerito: nessun task candidabile noto.
+
 ## 2026-07-12 - documentazione operativa e launcher riordinati
 
 - Task: `EA-DOCS-OPERATOR-MANUAL`

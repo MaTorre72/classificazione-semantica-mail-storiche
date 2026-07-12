@@ -10,6 +10,24 @@
   },
   "tasks": [
     {
+      "id": "EA-CLEANUP-LAUNCHERS-AND-LEGACY",
+      "title": "verificare launcher Windows e archiviare file superati nelle sottocartelle",
+      "area": "repository-maintenance",
+      "priority": "P1",
+      "priority_order": 4,
+      "description": "Provare i BAT reali e archiviare soltanto launcher e rapporti chiaramente superati.",
+      "estimated_files": ["*.bat", "archive/*", "reports/archive/*", "tests/test_windows_launchers.py", ".gitignore"],
+      "commands": ["EMAIL_ATLAS.bat", "CREA_STUDIO.bat", "CONTROLLO_WORKSPACE.bat", "ESPORTA_ORANGE.bat", "COSTRUISCI_ATLANTE.bat"],
+      "tests_to_add": ["inventario launcher correnti", "routing menu", "smoke senza apertura GUI"],
+      "acceptance_criteria": ["launcher correnti verificati", "file superati archiviati", "nessun modulo attivo rimosso"],
+      "risk": "low",
+      "dependencies": ["EA-DOCS-OPERATOR-MANUAL"],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_at": "2026-07-12T14:00:00+02:00",
+      "last_cycle_note": "Sette launcher correnti verificati; start_gui.bat e due report storici archiviati; workspace wsp_* ignorati senza cancellazione."
+    },
+    {
       "id": "EA-DOCS-OPERATOR-MANUAL",
       "title": "riordinare documentazione, comandi e launcher Windows",
       "area": "documentation",
