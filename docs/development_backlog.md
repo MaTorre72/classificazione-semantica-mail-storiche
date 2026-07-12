@@ -11,6 +11,19 @@ Backlog persistente ordinato per priorita. Ogni ciclo autonomo deve scegliere un
 
 ## Task
 
+### EA-CONVERSATION-STABLE-KEY-COLLISION
+
+- Area: conversation-reconstruction
+- Priorita: P0
+- Stato: done
+- Titolo: impedire collisioni stable_key su archivi reali con Message-ID assente o riutilizzato
+- Descrizione: rendere univoca e ripetibile la chiave delle conversazioni usando il `message_hash` locale oltre ai metadati e ai Message-ID.
+- File coinvolti: `src/email_cluster/atlas/conversations.py`, `tests/test_atlas_conversations.py`, `docs/troubleshooting.md`
+- Criteri di accettazione: conversazioni con stessi metadati ma hash diversi non collidono; Message-ID riutilizzati non collidono; ricostruzione completa sul database copiato da `wsp_2`
+- Rischio: medio
+- Dipendenze: nessuna
+- Note ultimo ciclo: 2026-07-12: validato prima su copia del database e poi con rilancio completo di `wsp_2`: 1450 messaggi, 954 conversazioni, 22 topic e 12/12 stage completati senza collisioni o warning.
+
 ### EA-CLEANUP-LAUNCHERS-AND-LEGACY
 
 - Area: repository-maintenance

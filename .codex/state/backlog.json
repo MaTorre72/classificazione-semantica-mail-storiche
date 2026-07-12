@@ -10,6 +10,24 @@
   },
   "tasks": [
     {
+      "id": "EA-CONVERSATION-STABLE-KEY-COLLISION",
+      "title": "impedire collisioni stable_key su archivi reali",
+      "area": "conversation-reconstruction",
+      "priority": "P0",
+      "priority_order": 1,
+      "description": "Disambiguare conversazioni con Message-ID assente o riutilizzato usando il message_hash stabile.",
+      "estimated_files": ["src/email_cluster/atlas/conversations.py", "tests/test_atlas_conversations.py", "docs/troubleshooting.md"],
+      "commands": ["pytest tests/test_atlas_conversations.py tests/test_atlas_reset.py", "build_conversations on copied wsp_2 database"],
+      "tests_to_add": ["fallback metadata collision", "reused Message-ID collision"],
+      "acceptance_criteria": ["stable_key univoca", "1450 messaggi collegati senza collisioni"],
+      "risk": "medium",
+      "dependencies": [],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_at": "2026-07-12T16:00:00+02:00",
+      "last_cycle_note": "wsp_2 completato con 1450 messaggi, 954 conversazioni, 22 topic e 12/12 stage; nessuna collisione o warning."
+    },
+    {
       "id": "EA-CLEANUP-LAUNCHERS-AND-LEGACY",
       "title": "verificare launcher Windows e archiviare file superati nelle sottocartelle",
       "area": "repository-maintenance",

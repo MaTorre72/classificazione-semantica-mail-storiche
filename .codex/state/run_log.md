@@ -1,5 +1,15 @@
 # Run Log
 
+## 2026-07-12 - collisione stable_key conversazioni corretta
+
+- Task: `EA-CONVERSATION-STABLE-KEY-COLLISION`
+- Esito: completed
+- Modifiche: `ConversationSeedRow` conserva il `message_hash`; la chiave stabile include gli hash sia nel percorso fallback sia quando un `Message-ID` viene riutilizzato; aggiunte due regressioni e troubleshooting.
+- Verifiche eseguite: test mirati `test_atlas_conversations.py` e `test_atlas_reset.py`; ricostruzione su copia del database; quality checks completi (`131 passed`); rilancio reale incrementale di `wsp_2` sulla copia storica confermata dall'utente.
+- Evidenze: 29 file invariati riutilizzati, 1450 email, 954 conversazioni, 22 topic, 164 messaggi inviati, 1286 ricevuti e 12/12 stage completati senza warning o `IntegrityError`.
+- Rischi/limiti: nessun blocco residuo noto; `wsp_2` resta un workspace locale ignorato da Git e contiene dati sensibili da non pubblicare.
+- Prossimo task suggerito: nessun task candidabile noto.
+
 ## 2026-07-12 - launcher Windows verificati e residui storici archiviati
 
 - Task: `EA-CLEANUP-LAUNCHERS-AND-LEGACY`

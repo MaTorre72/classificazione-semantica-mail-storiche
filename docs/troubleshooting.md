@@ -1,5 +1,16 @@
 # Risoluzione problemi
 
+## Errore `UNIQUE constraint failed` sulle conversazioni
+
+L'errore su `atlas_conversations.project_id, atlas_conversations.stable_key` poteva verificarsi
+con archivi grandi contenenti messaggi senza `Message-ID` o con `Message-ID` riutilizzati. Due
+conversazioni diverse finivano per condividere la stessa chiave tecnica. La chiave ora include
+anche il `message_hash` locale e stabile dei messaggi.
+
+Non cancellare il workspace: l'inserimento delle conversazioni avviene in transazione e può
+essere rilanciato dopo l'aggiornamento. Ripeti lo stesso studio sul medesimo workspace e sulla
+stessa copia storica dell'archivio, purché non sia un profilo attualmente usato da Thunderbird.
+
 ## La cartella non e valida
 
 Usa un percorso assoluto esistente e leggibile. Non spostare l'archivio durante l'elaborazione.
