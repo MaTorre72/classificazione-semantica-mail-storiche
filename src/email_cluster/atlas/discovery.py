@@ -14,20 +14,64 @@ from .common import STOPWORDS
 from .reports import write_report
 
 
+def classify_scope(text: str, *, subject: str = "", participants: list[str] | None = None) -> dict[str, Any]:
+    value = " ".join(part for part in (subject, text) if part).lower()
+    participant_text = " ".join(participants or []).lower()
+    rules = (
+        (
+            "Newsletter / eventi",
+            ("newsletter", "unsubscribe", "evento", "webinar", "iscriviti", "registrazione"),
+            0.92,
+        ),
+        (
+            "Account / notifiche tecniche",
+            ("github", "google", "account", "accesso", "password", "login", "security alert"),
+            0.85,
+        ),
+        (
+            "Acquisti / spedizioni",
+            ("ordine", "spedizione", "amazon", "acquisto", "tracking", "consegna"),
+            0.88,
+        ),
+        (
+            "Amministrativo / fornitori",
+            ("fattura", "pagamento", "preventivo", "bonifico", "fornitore"),
+            0.87,
+        ),
+        (
+            "Professionale operativo",
+            ("rifiuti", "emissioni", "autorizz", "aia", "seveso", "reach", "arpav", "impianto"),
+            0.83,
+        ),
+        (
+            "Personale / relazioni",
+            ("cena", "vacanza", "famiglia", "compleanno", "sabato", "amico", "auguri"),
+            0.8,
+        ),
+    )
+    for scope, terms, confidence in rules:
+        matched = [term for term in terms if term in value]
+        if matched:
+            return {
+                "scope": scope,
+                "confidence": round(min(0.98, confidence + 0.02 * max(0, len(matched) - 1)), 2),
+                "reason": f"Segnali: {', '.join(matched[:3])}",
+            }
+    if any(token in participant_text for token in ("@gmail.", "@hotmail.", "@outlook.", "@icloud.")):
+        return {
+            "scope": "Personale / relazioni",
+            "confidence": 0.58,
+            "reason": "Pattern mittenti/destinatari tipico di corrispondenza personale.",
+        }
+    return {
+        "scope": "Professionale generale",
+        "confidence": 0.45,
+        "reason": "Fallback prudente: nessun segnale forte, resta necessario controllo umano.",
+    }
+
+
 def scope_for_text(text: str) -> str:
-    value = text.lower()
-    if any(term in value for term in ("newsletter", "unsubscribe", "evento", "webinar")):
-        return "Newsletter / eventi"
-    if any(term in value for term in ("ordine", "spedizione", "amazon", "acquisto")):
-        return "Acquisti / spedizioni"
-    if any(term in value for term in ("fattura", "pagamento", "preventivo")):
-        return "Amministrativo / fornitori"
-    if any(
-        term in value
-        for term in ("rifiuti", "emissioni", "autorizz", "via", "aia", "seveso", "reach")
-    ):
-        return "Professionale operativo"
-    return "Professionale generale"
+    return str(classify_scope(text).get("scope") or "Professionale generale")
 
 
 def _subject_signals(subject: str) -> list[str]:

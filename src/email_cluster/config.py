@@ -79,7 +79,7 @@ class ClusteringConfig(BaseModel):
 
 
 class CleaningConfig(BaseModel):
-    version: str = "v2.0.2"
+    version: str = "v2.1.0"
     min_semantic_chars: int = 80
     min_unique_words: int = 8
     max_semantic_chars: int = 12000

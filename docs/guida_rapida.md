@@ -1,35 +1,35 @@
 # Guida rapida
 
-## Che cosa fa
+## Il file da avviare
 
-Email Atlas legge archivi locali, ricostruisce Conversazioni, rende l'Archivio ricercabile e aiuta
-a costruire un Atlante di Categorie revisionate. Non sposta messaggi, non sostituisce Thunderbird,
-non è un CRM e non invia dati fuori dal computer.
+Fai doppio clic su **`EMAIL_ATLAS.bat`** nella cartella del progetto. E il menu principale e il
+punto di ingresso consigliato.
 
-## Percorso completo
+Prepara una **copia locale** dell'archivio Thunderbird/MBOX. Non selezionare il profilo
+Thunderbird attivo e non lavorare mentre Thunderbird usa quei file.
 
-```powershell
-email-atlas inventory --input mail --db data/email_cluster.sqlite --project archivio_storico
-email-atlas parse --db data/email_cluster.sqlite --project archivio_storico
-email-atlas build-conversations --db data/email_cluster.sqlite --project archivio_storico --account studio@example.it
-email-atlas index --db data/email_cluster.sqlite --project archivio_storico
-email-atlas extract-entities --db data/email_cluster.sqlite --project archivio_storico
-email-atlas build-semantic-docs --db data/email_cluster.sqlite --project archivio_storico
-email-atlas discover --db data/email_cluster.sqlite --project archivio_storico
-email-atlas review --db data/email_cluster.sqlite --project archivio_storico
-email-atlas export-atlas --db data/email_cluster.sqlite --project archivio_storico --output data/atlas
-email-atlas evaluate --db data/email_cluster.sqlite --project archivio_storico
-```
+## Primo studio
 
-Prima dell'importazione usa `inventory`: mostra cosa contiene la sorgente senza classificarla. La
-revisione trasforma proposte automatiche in Categorie dell'Atlante. Il LLM è sempre opzionale.
+1. Avvia `EMAIL_ATLAS.bat`.
+2. Scegli `1. Crea o aggiorna uno studio da snapshot MBOX`.
+3. Indica la cartella contenente la copia MBOX.
+4. Indica un workspace diverso dalla sorgente, oppure premi Invio per `workspace_studio_email`.
+5. Per una prima prova su un archivio grande rispondi `n` al testo allegati.
+6. Attendi il completamento e apri `study_report.html`.
 
-Per una dimostrazione isolata: `email-atlas smoke-test`.
-# Controlli operativi
+## Dal report all'Atlante
 
-Procedi una fase alla volta dalla GUI e apri il report prodotto. Prima della discovery verifica che il numero di conversazioni sia plausibile, che i fallback non uniscano pratiche diverse e che la ricerca trovi termini noti. In caso di errore conserva database e sorgenti, correggi il prerequisito indicato e ripeti solo la fase interessata. Consulta `primi_passi.md` per il percorso completo e `troubleshooting.md` per il recupero.
-# Nuovo percorso consigliato
+1. Controlla warning, posta inviata, conversazioni e allegati in `study_report.html`.
+2. Apri `classification_workspace.csv` in Excel o LibreOffice.
+3. Compila `human_decision` e, quando serve, i campi `final_*`; non rinominare le colonne.
+4. Salva il CSV senza cambiarne formato o delimitatore.
+5. Riapri `EMAIL_ATLAS.bat` e scegli `2. Costruisci Atlante finale`.
+6. Apri `atlas_final.html` nel workspace.
 
-Avvia `AVVIA_CONSOLE.bat` e usa le quattro sezioni dello Studio Workbench. Per prima cosa genera `outputs/study_pack`, poi leggi `study_report.html`. Se serve un'esplorazione visuale più ricca, genera l'Orange Pack. Solo dopo modifica `classification_workspace.csv` e importa le righe approvate per ottenere l'Atlante finale.
+## Se qualcosa non torna
 
-La ricerca e un supporto dentro Esplora Risultati, non una fase obbligatoria. Assistente locale e strumenti precedenti sono in Avanzate / Legacy.
+Dal menu scegli prima `6. Controlla integrita workspace`. Usa `7. Ripara workspace con backup`
+soltanto se il controllo lo indica. Non cancellare il database e non disattivare le foreign key.
+
+Per i dettagli consulta la [guida completa](guida_uso_completa.md); per PowerShell consulta
+[comandi](comandi.md).

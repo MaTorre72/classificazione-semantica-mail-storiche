@@ -10,4 +10,4 @@
 8. Avvia la discovery, poi decidi nella pagina **Revisione**.
 9. Esporta inizialmente con modalita `public-safe`.
 
-Se una fase fallisce, non rilanciarla alla cieca: leggi il messaggio, verifica il prerequisito precedente e consulta [troubleshooting](troubleshooting.md).
+Se una fase fallisce, non rilanciarla alla cieca: leggi il messaggio, verifica il prerequisito precedente e consulta [troubleshooting](../troubleshooting.md).

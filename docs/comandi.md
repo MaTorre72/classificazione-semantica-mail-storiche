@@ -1,58 +1,57 @@
-# Workflow consigliato
+# Comandi Email Atlas
 
-## Aggiorna archivio
+`EMAIL_ATLAS.bat` e consigliato per l'uso normale. Questi sono gli equivalenti PowerShell per
+automazione, log e archivi grandi. Eseguili dalla cartella del progetto.
 
-```powershell
-email-cluster run --input mail --project archivio_storico --db data/email_cluster.sqlite
-```
-
-## Avvia workbench
+## Verifica installazione
 
 ```powershell
-email-cluster workbench --project archivio_storico --db data/email_cluster.sqlite
+.\.venv\Scripts\email-atlas.exe --help
 ```
 
-Il workbench crea o aggiorna i contesti operativi dalla run tecnica esistente e indica una sola azione.
+Se manca: `.\.venv\Scripts\python.exe -m pip install -e ".[ui,attachments]"`.
 
-## Rivedi
+## Crea o aggiorna uno studio
 
 ```powershell
-email-cluster macro-review --project archivio_storico --db data/email_cluster.sqlite
-email-cluster review --next --project archivio_storico --db data/email_cluster.sqlite
+.\.venv\Scripts\email-atlas.exe study `
+  --input "D:\EmailAtlas\snapshot" `
+  --workspace "D:\EmailAtlas\studio" `
+  --no-attachments-text
 ```
 
-Azioni principali:
+Per gli allegati usa `--with-attachments-text`. Il rilancio e incrementale. Filtri facoltativi:
+`--date-from YYYY-MM-DD`, `--date-to YYYY-MM-DD`, `--source-folder NOME` (ripetibile),
+`--limit-messages N` e `--limit-conversations N`.
+
+## Controlla e ripara
 
 ```powershell
-email-cluster approve-context --context 12 --db data/email_cluster.sqlite
-email-cluster rename-context --context 12 --name "Nome operativo" --db data/email_cluster.sqlite
-email-cluster exclude-from-context --context 12 --email-id 123 --db data/email_cluster.sqlite
-email-cluster move-to-context --email-id 123 --context 15 --db data/email_cluster.sqlite
-email-cluster split-context --context 12 --db data/email_cluster.sqlite
-email-cluster mark-context-nonprofessional --context 12 --db data/email_cluster.sqlite
+.\.venv\Scripts\email-atlas.exe doctor-workspace --workspace "D:\EmailAtlas\studio"
+.\.venv\Scripts\email-atlas.exe repair-workspace --workspace "D:\EmailAtlas\studio"
 ```
 
-## LLM locale opzionale
+Ripara solo dopo il doctor: il comando crea un backup e si ferma sulle violazioni foreign key.
+
+## Atlante e Orange
 
 ```powershell
-email-cluster ask-context-llm --context 12 --db data/email_cluster.sqlite
+.\.venv\Scripts\email-atlas.exe build-atlas --workspace "D:\EmailAtlas\studio"
+.\.venv\Scripts\email-atlas.exe export-orange --workspace "D:\EmailAtlas\studio"
 ```
 
-Se disabilitato, il comando non blocca il workflow. Nessun modello viene scaricato.
+## Launcher Windows
 
-## Esporta
+| File | Uso |
+|---|---|
+| `EMAIL_ATLAS.bat` | Menu principale consigliato. |
+| `CREA_STUDIO.bat` | Crea o aggiorna lo studio. |
+| `CONTROLLO_WORKSPACE.bat` | Diagnosi conservativa. |
+| `RIPARA_WORKSPACE.bat` | Riparazione con conferma e backup. |
+| `COSTRUISCI_ATLANTE.bat` | Atlante dalle decisioni revisionate. |
+| `ESPORTA_ORANGE.bat` | Export Orange facoltativo. |
+| `AVVIA_CONSOLE.bat` | GUI minima facoltativa. |
+| `start_gui.bat` | Interfaccia legacy, non consigliata. |
 
-```powershell
-email-cluster export-final --project archivio_storico --db data/email_cluster.sqlite
-email-cluster export-context-report --project archivio_storico --format csv --output data/output/contexts.csv --db data/email_cluster.sqlite
-```
-
-## GUI e diagnosi
-
-```powershell
-email-cluster-gui
-email-cluster doctor --input mail --db data/email_cluster.sqlite
-```
-
-I cluster sono supporto tecnico, non la classificazione finale. Consulta [Comandi avanzati](avanzato.md)
-solo per tuning, debug o analisi delle run.
+I comandi `email-cluster` restano disponibili per workflow precedenti, ricerca e clustering, ma
+non sono necessari per un nuovo studio Email Atlas.

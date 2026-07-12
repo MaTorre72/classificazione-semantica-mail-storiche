@@ -237,6 +237,11 @@ def study_cmd(
     with_attachments_text: Annotated[bool, typer.Option("--with-attachments-text")] = False,
     max_attachment_mb: Annotated[int, typer.Option("--max-attachment-mb")] = 20,
     sample_size: Annotated[int | None, typer.Option("--sample-size")] = None,
+    limit_messages: Annotated[int | None, typer.Option("--limit-messages")] = None,
+    limit_conversations: Annotated[int | None, typer.Option("--limit-conversations")] = None,
+    date_from: Annotated[str | None, typer.Option("--date-from", help="Data iniziale ISO YYYY-MM-DD.")] = None,
+    date_to: Annotated[str | None, typer.Option("--date-to", help="Data finale ISO YYYY-MM-DD.")] = None,
+    source_folder: Annotated[list[str] | None, typer.Option("--source-folder", help="Cartella o file sorgente; opzione ripetibile.")] = None,
     embedding_provider: Annotated[str, typer.Option("--embedding-provider")] = "none",
     embedding_model: Annotated[str, typer.Option("--embedding-model")] = "",
 ) -> None:
@@ -256,6 +261,11 @@ def study_cmd(
                 attachments_text=with_attachments_text or not no_attachments_text,
                 max_attachment_mb=max_attachment_mb,
                 sample_size=sample_size,
+                limit_messages=limit_messages,
+                limit_conversations=limit_conversations,
+                date_from=date_from,
+                date_to=date_to,
+                source_folders=tuple(source_folder or ()),
                 embedding_provider=embedding_provider,
                 embedding_model=embedding_model,
             )

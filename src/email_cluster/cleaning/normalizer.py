@@ -10,6 +10,25 @@ from .classifier import classify_message
 from .quality import semantic_quality
 from .segmentation import segment_body
 
+EMAIL_NOISE_WORDS = {
+    "bcc",
+    "cc",
+    "come",
+    "data",
+    "date",
+    "from",
+    "message",
+    "sent",
+    "subject",
+    "to",
+    "your",
+}
+DATE_NOISE_PATTERNS = (
+    r"\b\d{1,2}[/_-]\d{1,2}[/_-]\d{2,4}\b",
+    r"\b\d{4}[/_-]\d{1,2}[/_-]\d{1,2}\b",
+    r"\b\d{1,2}[/_-]\d{4}\b",
+)
+
 
 def build_clean_text(
     email_id: int,
@@ -76,13 +95,13 @@ def clean_subject(subject: str) -> str:
     value = remove_html_artifacts(subject)
     value = re.sub(r"^(?:(?:re|fw|fwd|rif|inoltro)\s*:\s*)+", "", value, flags=re.I)
     value = re.sub(r"\[(?:spam|external|esterno)\]\s*", "", value, flags=re.I)
-    return normalize_whitespace(value)
+    return _strip_email_noise(value)
 
 
 def clean_current_message(text: str) -> str:
     kept: list[str] = []
     for raw_line in text.splitlines():
-        line = normalize_whitespace(normalize_inline_links(raw_line))
+        line = _strip_email_noise(normalize_inline_links(raw_line))
         if line and not _is_low_signal_line(line):
             kept.append(line)
     return normalize_whitespace("\n".join(kept))
@@ -103,6 +122,28 @@ def normalize_inline_links(text: str) -> str:
     text = re.sub(r"\[?cid:[^\] >]+\]?", "", text, flags=re.I)
     text = re.sub(r"<https?://[^>]+>", "", text, flags=re.I)
     return text
+
+
+def _strip_email_noise(text: str) -> str:
+    value = text
+    for pattern in DATE_NOISE_PATTERNS:
+        value = re.sub(pattern, " ", value, flags=re.I)
+    value = re.sub(
+        r"\b(?:"
+        + "|".join(re.escape(word) for word in sorted(EMAIL_NOISE_WORDS))
+        + r")\b",
+        " ",
+        value,
+        flags=re.I,
+    )
+    value = re.sub(r"[_-]{2,}", " ", value)
+    value = normalize_whitespace(value)
+    if not value:
+        return ""
+    tokens = re.findall(r"[A-Za-zÀ-ÿ]{3,}", value)
+    if tokens and all(token.lower() in EMAIL_NOISE_WORDS for token in tokens):
+        return ""
+    return value
 
 
 def _is_low_signal_line(line: str) -> bool:

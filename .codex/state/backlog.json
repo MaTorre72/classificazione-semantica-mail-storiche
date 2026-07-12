@@ -1,0 +1,431 @@
+{
+  "version": 1,
+  "selection_policy": {
+    "ordered_by": [
+      "priority_order",
+      "dependencies_satisfied",
+      "id"
+    ],
+    "one_task_per_cycle": true
+  },
+  "tasks": [
+    {
+      "id": "EA-DOCS-OPERATOR-MANUAL",
+      "title": "riordinare documentazione, comandi e launcher Windows",
+      "area": "documentation",
+      "priority": "P1",
+      "priority_order": 5,
+      "description": "Definire il punto di ingresso consigliato e separare il percorso moderno dalle superfici legacy.",
+      "estimated_files": ["README.md", "docs/README.md", "docs/guida_rapida.md", "docs/guida_uso_completa.md", "docs/comandi.md"],
+      "commands": ["email-atlas --help", "email-atlas study --help"],
+      "tests_to_add": ["controlli documentali e launcher"],
+      "acceptance_criteria": ["EMAIL_ATLAS.bat non ambiguo", "manuale operativo completo", "legacy separato"],
+      "risk": "low",
+      "dependencies": [],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_at": "2026-07-12T12:00:00+02:00",
+      "last_cycle_note": "Riordinati indice, guida rapida e comandi; EMAIL_ATLAS.bat e il launcher consigliato; 21 documenti storici conservati in docs/archive."
+    },
+    {
+      "id": "EA-EPIC0-BOOT",
+      "title": "bootstrap infrastruttura autonoma Codex",
+      "area": "autonomous-dev",
+      "priority": "P0",
+      "priority_order": 0,
+      "description": "Creare AGENTS, backlog persistente, prompt, stato, guard, next-task runner, quality checks e documentazione iniziale.",
+      "estimated_files": [
+        "AGENTS.md",
+        "docs/development_backlog.md",
+        "docs/autonomous_workflow.md",
+        "docs/acceptance_criteria.md",
+        "docs/non_interactive_codex.md",
+        ".codex/prompts/*",
+        ".codex/state/*",
+        "scripts/*",
+        ".github/workflows/*"
+      ],
+      "commands": [
+        "scripts/run_quality_checks.ps1",
+        "scripts/codex_next_task.ps1 -DryRun"
+      ],
+      "tests_to_add": [
+        "smoke del workflow non interattivo",
+        "parsing backlog e prompt generation"
+      ],
+      "acceptance_criteria": [
+        "file base esistenti",
+        "lock file gestito",
+        "dry-run disponibile",
+        "quality gate invocabile",
+        "stato persistente inizializzato"
+      ],
+      "risk": "medium",
+      "dependencies": [],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "Primo ciclo completato: infrastruttura autonoma iniziale creata, integrazione CLI Codex marcata come manual integration required nel sandbox corrente."
+    },
+    {
+      "id": "EA-EPIC0-HOOKS",
+      "title": "rifinire integrazione hook o equivalenti script",
+      "area": "autonomous-dev",
+      "priority": "P1",
+      "priority_order": 10,
+      "description": "Collegare guard, quality gate, output check e secret check alla modalita reale supportata dalla CLI Codex o mantenere la procedura manuale documentata.",
+      "estimated_files": [
+        "docs/non_interactive_codex.md",
+        ".codex/*",
+        "scripts/*"
+      ],
+      "commands": [
+        "codex --help",
+        "codex exec --help"
+      ],
+      "tests_to_add": [
+        "verifica help CLI",
+        "compatibilita argomenti script"
+      ],
+      "acceptance_criteria": [
+        "nessuna sintassi hook inventata",
+        "integrazione verificata oppure manual integration required"
+      ],
+      "risk": "low",
+      "dependencies": [
+        "EA-EPIC0-BOOT"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: documentata la distinzione tra prompt nativo e runner scriptato; aggiunto test repository-level per prompt attesi e stato manual integration required; quality checks completi superati. Help CLI Codex ancora non eseguibile nel sandbox per Accesso negato."
+    },
+    {
+      "id": "EA-EPIC1-WORKSPACE",
+      "title": "rendere robusti stato workspace, stage e invalidazione",
+      "area": "workspace-stage-management",
+      "priority": "P1",
+      "priority_order": 20,
+      "description": "Consolidare state, checkpoint, resume, rebuild-stage e invalidazione stage dipendenti.",
+      "estimated_files": [
+        "src/email_cluster/atlas/workspace_study.py",
+        "tests/*",
+        "docs/pipeline.md"
+      ],
+      "commands": [
+        "email-atlas study --workspace <ws> --stages list"
+      ],
+      "tests_to_add": [
+        "resume",
+        "rebuild-stage",
+        "invalidazione dipendenze"
+      ],
+      "acceptance_criteria": [
+        "stage autonomi",
+        "rilanciabili",
+        "stato chiaro"
+      ],
+      "risk": "high",
+      "dependencies": [
+        "EA-EPIC0-BOOT"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: `state.json` portato a v2 con `stage_details`, stop reale su `--stages`, resume che riusa solo stage con artefatto minimo ancora presente, e invalidazione a valle su `--rebuild-stage` o drift delle opzioni."
+    },
+    {
+      "id": "EA-EPIC2-ATTACHMENTS",
+      "title": "allegati come stage autonomo e invalidante",
+      "area": "attachments",
+      "priority": "P1",
+      "priority_order": 30,
+      "description": "Separare attachment metadata e text, introdurre batch, limiti e invalidazione stage successivi.",
+      "estimated_files": [
+        "src/email_cluster/atlas/*attachment*",
+        "src/email_cluster/atlas/workspace_study.py",
+        "tests/*"
+      ],
+      "commands": [
+        "email-atlas study --workspace <ws> --with-attachments-text"
+      ],
+      "tests_to_add": [
+        "prima senza allegati poi con allegati",
+        "nessuna riestrazione inutile"
+      ],
+      "acceptance_criteria": [
+        "stage attachment rilanciabile",
+        "invalidazione coerente"
+      ],
+      "risk": "high",
+      "dependencies": [
+        "EA-EPIC1-WORKSPACE"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: importazione workspace resa metadata-only; `extract_attachment_text_optional` ora aggiorna o svuota gli estratti, il cambio opzioni allegati invalida solo quello stage e i successivi, e il resume evita reimport dei messaggi invariati."
+    },
+    {
+      "id": "EA-EPIC3-CLEANING",
+      "title": "pulizia testo severa per email storiche",
+      "area": "text-cleaning",
+      "priority": "P1",
+      "priority_order": 40,
+      "description": "Stopword email, filtri date, rimozione header/footer/disclaimer e versionamento preprocessing.",
+      "estimated_files": [
+        "src/email_cluster/atlas/parsing.py",
+        "src/email_cluster/*clean*",
+        "tests/*"
+      ],
+      "commands": [
+        "email-atlas study --sample-size 50 --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "rimozione your/come/data/sent/subject",
+        "esclusione pattern data dalle label"
+      ],
+      "acceptance_criteria": [
+        "semantic_text leggibile",
+        "topic source meno rumorosi"
+      ],
+      "risk": "high",
+      "dependencies": [
+        "EA-EPIC1-WORKSPACE"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: preprocessing portato a v2.1.0 con rimozione di stopword email e pattern data dal cleaner; le label topic ignorano token rumorosi come `subject`, `sent`, `data` e `03_2026`."
+    },
+    {
+      "id": "EA-EPIC4-SCOPE",
+      "title": "classificazione preliminare di scope",
+      "area": "scope-discovery",
+      "priority": "P2",
+      "priority_order": 50,
+      "description": "Aggiungere probable_scope, confidence e reason per separare topic per scope.",
+      "estimated_files": [
+        "src/email_cluster/atlas/discovery.py",
+        "src/email_cluster/atlas/workspace_study.py",
+        "tests/*"
+      ],
+      "commands": [
+        "email-atlas study --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "scope valorizzato",
+        "confidence coerente"
+      ],
+      "acceptance_criteria": [
+        "topic separati per scope"
+      ],
+      "risk": "medium",
+      "dependencies": [
+        "EA-EPIC3-CLEANING"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: classificazione scope centralizzata in `classify_scope`; `conversations.csv` ora espone `probable_scope`, `scope_confidence` e `scope_reason`, e `classification_workspace.csv` usa lo scope prevalente del topic come `proposed_scope`."
+    },
+    {
+      "id": "EA-EPIC5-TOPICS",
+      "title": "topic grezzi in categorie candidate revisionabili",
+      "area": "topic-candidates",
+      "priority": "P1",
+      "priority_order": 60,
+      "description": "Sostituire label frammentate con categorie candidate, label reason, warning e esempi.",
+      "estimated_files": [
+        "src/email_cluster/atlas/discovery.py",
+        "reports/*",
+        "tests/*"
+      ],
+      "commands": [
+        "email-atlas study --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "GitHub e Google in Account / notifiche tecniche",
+        "fatture in categoria amministrativa",
+        "PEC/Hiro leggibile"
+      ],
+      "acceptance_criteria": [
+        "topics.csv leggibile",
+        "categorie candidate revisionabili"
+      ],
+      "risk": "high",
+      "dependencies": [
+        "EA-EPIC3-CLEANING",
+        "EA-EPIC4-SCOPE"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: `topics.csv` ora normalizza i cluster in categorie revisionabili guidate da scope, termini, domini e segnali allegati; esporta `label_reason`, `warnings`, `main_domains`, `main_attachments`, borderline e outlier, e il `classification_workspace.csv` riusa le stesse motivazioni."
+    },
+    {
+      "id": "EA-EPIC6-CLASSIFICATION-WORKSPACE",
+      "title": "classification workspace davvero revisionabile",
+      "area": "workspace-review",
+      "priority": "P2",
+      "priority_order": 70,
+      "description": "Valorizzare suggested_decision, proposed_scope, proposed_activity e proposed_theme con esempi concreti.",
+      "estimated_files": [
+        "src/email_cluster/atlas/workspace_study.py",
+        "tests/*",
+        "docs/classification_workspace.md"
+      ],
+      "commands": [
+        "email-atlas study --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "proposed_scope non tutto Da definire",
+        "campi non copia della raw label"
+      ],
+      "acceptance_criteria": [
+        "CSV di revisione utile"
+      ],
+      "risk": "medium",
+      "dependencies": [
+        "EA-EPIC5-TOPICS"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: `classification_workspace.csv` ora usa esempi concreti nei subject, propone `proposed_activity` e `proposed_theme` leggibili senza copiare il nome categoria, e valorizza `suggested_decision` con euristiche locali prudenti (`approve`, `exclude`, `unclear`)."
+    },
+    {
+      "id": "EA-EPIC7-STUDY-REPORT",
+      "title": "report di studio leggibile senza GUI",
+      "area": "reporting",
+      "priority": "P2",
+      "priority_order": 80,
+      "description": "Mostrare stato allegati, qualita testo, metodo topic, warning e link CSV.",
+      "estimated_files": [
+        "src/email_cluster/atlas/*report*",
+        "tests/*"
+      ],
+      "commands": [
+        "email-atlas study --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "report con stato allegati",
+        "report con metodo topic",
+        "warning TF-IDF"
+      ],
+      "acceptance_criteria": [
+        "study_report.html autosufficiente"
+      ],
+      "risk": "medium",
+      "dependencies": [
+        "EA-EPIC2-ATTACHMENTS",
+        "EA-EPIC5-TOPICS"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-06-30: `study_report.html` reso autosufficiente anche senza GUI; ora dichiara stato allegati per `extraction_status`, metodo topic attivo, fallback `TF-IDF + SVD + KMeans`, warning e link ai CSV principali. Coperto da test dedicato sul report."
+    },
+    {
+      "id": "EA-EPIC8-SCALE",
+      "title": "scalabilita per archivi grandi",
+      "area": "scalability",
+      "priority": "P2",
+      "priority_order": 90,
+      "description": "Batch, streaming, sample-size, filtri e limiti memoria per archivi >100.000 email.",
+      "estimated_files": [
+        "src/email_cluster/atlas/*",
+        "tests/*",
+        "docs/*"
+      ],
+      "commands": [
+        "email-atlas study --sample-size 50 --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "sample-size",
+        "limit-messages",
+        "limit-conversations",
+        "memoria controllata"
+      ],
+      "acceptance_criteria": [
+        "pipeline non carica inutilmente tutto in memoria"
+      ],
+      "risk": "high",
+      "dependencies": [
+        "EA-EPIC1-WORKSPACE"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_at": "2026-07-12T08:37:28.5574690+02:00",
+      "last_cycle_note": "2026-07-12: benchmark sintetico locale completato su 10000 messaggi e 5000 conversazioni in 326.061 s, picco Python 21.722 MiB, output 40.615 MiB e 12/12 stage completati; filtri data/cartella trasferiti a EA-EPIC8-FILTERS."
+    },
+    {
+      "id": "EA-EPIC8-FILTERS",
+      "title": "filtri data e cartella per lo study workspace",
+      "area": "scalability",
+      "priority": "P3",
+      "priority_order": 95,
+      "description": "Aggiungere filtri locali espliciti per intervallo data e cartelle sorgente.",
+      "estimated_files": ["src/email_cluster/atlas/workspace_study.py", "src/email_cluster/atlas/cli.py", "tests/*", "docs/*"],
+      "commands": ["email-atlas study --help"],
+      "tests_to_add": ["filtri data", "filtri cartella", "invalidazione stato"],
+      "acceptance_criteria": ["filtri applicati prima degli export", "opzioni persistite", "test di invalidazione"],
+      "risk": "medium",
+      "dependencies": ["EA-EPIC8-SCALE"],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_at": "2026-07-12T10:51:17.6833937+02:00",
+      "last_cycle_note": "2026-07-12: aggiunti filtri locali per intervallo data e cartelle sorgente, persistiti in stato/manifest e coperti da invalidazione e test."
+    },
+    {
+      "id": "EA-EPIC9-ORANGE",
+      "title": "pacchetto Orange opzionale minimale",
+      "area": "export-orange",
+      "priority": "P3",
+      "priority_order": 100,
+      "description": "Mantenere export e guida Orange senza dipendenze obbligatorie.",
+      "estimated_files": [
+        "src/email_cluster/atlas/study.py",
+        "docs/orange_export.md",
+        "tests/*"
+      ],
+      "commands": [
+        "email-atlas export-orange --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "export Orange da workspace"
+      ],
+      "acceptance_criteria": [
+        "export opzionale e documentato"
+      ],
+      "risk": "low",
+      "dependencies": [
+        "EA-EPIC6-CLASSIFICATION-WORKSPACE"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_at": "2026-07-12T11:36:35.4772515+02:00",
+      "last_cycle_note": "2026-07-12: chiuso verificando export Orange opzionale, comando CLI workspace, documentazione e test dedicati."
+    },
+    {
+      "id": "EA-EPIC10-ATLAS",
+      "title": "costruzione Atlante finale",
+      "area": "final-atlas",
+      "priority": "P2",
+      "priority_order": 110,
+      "description": "Consolidare build-atlas, import decisioni manuali e output finali HTML/XLSX/YAML.",
+      "estimated_files": [
+        "src/email_cluster/atlas/workspace_study.py",
+        "src/email_cluster/atlas/export.py",
+        "tests/*"
+      ],
+      "commands": [
+        "email-atlas build-atlas --workspace <ws>"
+      ],
+      "tests_to_add": [
+        "validazione decisioni importate"
+      ],
+      "acceptance_criteria": [
+        "Atlante finale consistente e derivato dalle decisioni approvate"
+      ],
+      "risk": "medium",
+      "dependencies": [
+        "EA-EPIC6-CLASSIFICATION-WORKSPACE"
+      ],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_note": "2026-07-12: validazione decisioni e candidate_id consolidata; build-atlas produce solo righe approvate in CSV/JSON/YAML/HTML/XLSX. Quality checks verdi (126 passed)."
+    }
+  ]
+}
