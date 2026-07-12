@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from array import array
+from collections.abc import Iterator, Sequence
 import hashlib
 import json
 import re
-from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
+from itertools import groupby
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +19,29 @@ from .reports import write_report
 from .reset import reset_atlas_derived_data
 
 GENERIC_SUBJECTS = {"documenti", "informazioni", "richiesta", "aggiornamento", "comunicazione"}
+RELATION_ISOLATED = 0
+RELATION_HEADERS = 1
+RELATION_SUBJECT_PARTICIPANTS_DATE = 2
+RELATION_METHODS = (
+    "isolated",
+    "headers",
+    "subject_participants_date",
+)
+
+
+@dataclass(slots=True)
+class ConversationSeedRow:
+    id: int
+    subject: str | None
+    message_id: str
+    has_attachments: int
+    sent_at: str | None
+    imported_at: str | None
+    linked_ids: tuple[str, ...]
+    participants: tuple[str, ...]
+    is_incoming: bool
+    relation_code: int = RELATION_ISOLATED
+    conversation_root: int = -1
 
 
 def normalize_message_id(value: str | None) -> str:
@@ -28,9 +54,71 @@ def header_message_ids(value: Any) -> list[str]:
     return [normalize_message_id(item) for item in re.findall(r"<([^>]+)>", str(value or ""))]
 
 
-def normalized_participants(row: dict[str, Any]) -> set[str]:
-    recipients = json.loads(row["recipients"] or "[]")
-    return {str(value).strip().lower() for value in [row["sender"], *recipients] if value}
+def normalized_participants(sender: str | None, recipients_json: str | None) -> set[str]:
+    recipients = json.loads(recipients_json or "[]")
+    participants: set[str] = set()
+    if sender:
+        participants.add(str(sender).strip().lower())
+    participants.update(str(value).strip().lower() for value in recipients if value)
+    return participants
+
+
+def _header_linked_ids(raw_headers_json: str | None) -> tuple[str, ...]:
+    headers = json.loads(raw_headers_json or "{}")
+    references = header_message_ids(headers.get("References"))
+    if not references:
+        return header_message_ids(headers.get("In-Reply-To"))
+    in_reply_to = header_message_ids(headers.get("In-Reply-To"))
+    if not in_reply_to:
+        return references
+    return references + in_reply_to
+
+
+def _conversation_seed_row(row: Any, accounts: set[str]) -> ConversationSeedRow:
+    sender = row["sender"] or ""
+    sender_lower = sender.lower()
+    return ConversationSeedRow(
+        id=row["id"],
+        subject=clean_subject(row["subject"] or ""),
+        message_id=normalize_message_id(row["original_message_id"]),
+        has_attachments=row["has_attachments"],
+        sent_at=row["sent_at"],
+        imported_at=row["imported_at"],
+        linked_ids=_header_linked_ids(row["raw_headers_json"]),
+        participants=tuple(normalized_participants(sender, row["recipients"])),
+        is_incoming=(
+            not any(account in sender_lower for account in accounts) if accounts else True
+        ),
+    )
+
+
+def _conversation_selected_texts(con, email_ids: Sequence[int]) -> Iterator[tuple[int, str]]:
+    """Yield selected text rows for the provided email ids in input order."""
+    if not email_ids:
+        return
+    batch_size = 900
+    for offset in range(0, len(email_ids), batch_size):
+        batch = email_ids[offset : offset + batch_size]
+        if not batch:
+            continue
+        values = ",".join("(?,?)" for _ in batch)
+        query = (
+            "WITH requested(id, ord) AS (VALUES "
+            f"{values}"
+            ") "
+            "SELECT e.id,coalesce(c.current_message_text,e.body_extracted_text) selected_text "
+            "FROM requested r "
+            "JOIN emails e ON e.id=r.id "
+            "LEFT JOIN clean_texts c ON c.id=("
+            "    SELECT max(c2.id) FROM clean_texts c2 WHERE c2.email_id=e.id"
+            ") "
+            "ORDER BY r.ord"
+        )
+        params: list[int] = []
+        for position, email_id in enumerate(batch):
+            params.extend((int(email_id), position))
+        for row in con.execute(query, tuple(params)):
+            yield int(row["id"]), row["selected_text"]
 
 
 def stable_conversation_key(members: list[dict[str, Any]]) -> str:
@@ -42,9 +130,28 @@ def stable_conversation_key(members: list[dict[str, Any]]) -> str:
         material = "message-ids|" + "|".join(message_ids)
     else:
         subject = clean_subject(members[-1]["subject"] or "").lower()
-        participants = sorted({item for row in members for item in normalized_participants(row)})
+        participants = sorted({item for row in members for item in row["_participants"]})
         first_date = (members[0]["sent_at"] or members[0]["imported_at"] or "")[:10]
         material = f"fallback|{subject}|{first_date}|{'|'.join(participants)}"
+    return hashlib.sha256(material.encode("utf-8", errors="replace")).hexdigest()
+
+
+def stable_conversation_key_from_parts(
+    *,
+    message_ids: list[str],
+    fallback_subject: str,
+    fallback_first_date: str,
+    fallback_participants: list[str],
+) -> str:
+    """Build a stable key from already aggregated conversation fields."""
+    normalized_ids = sorted(normalize_message_id(value) for value in message_ids if value)
+    if normalized_ids:
+        material = "message-ids|" + "|".join(normalized_ids)
+    else:
+        material = (
+            f"fallback|{clean_subject(fallback_subject).lower()}|{fallback_first_date}|"
+            f"{'|'.join(sorted(fallback_participants))}"
+        )
     return hashlib.sha256(material.encode("utf-8", errors="replace")).hexdigest()
 
 
@@ -53,6 +160,24 @@ def _days_between(first: str | None, second: str | None) -> int:
         return abs((datetime.fromisoformat(first) - datetime.fromisoformat(second)).days)
     except (TypeError, ValueError):
         return 999
+
+
+def _append_capped(items: list[dict[str, Any]], item: dict[str, Any], limit: int) -> None:
+    if len(items) < limit:
+        items.append(item)
+
+
+def _insert_top_by_messages(
+    items: list[dict[str, Any]], item: dict[str, Any], limit: int
+) -> None:
+    items.append(item)
+    items.sort(key=lambda current: current["messages"], reverse=True)
+    if len(items) > limit:
+        del items[limit:]
+
+
+def _relation_method_name(relation_code: int) -> str:
+    return RELATION_METHODS[relation_code]
 
 
 def build_conversations(
@@ -102,87 +227,173 @@ def build_conversations(
         return result
     if existing and mode == "rebuild-derived":
         reset_report = reset_atlas_derived_data(db_path, project).to_dict()
-    accounts = [value.lower() for value in (accounts or [])]
+    account_tokens = {value.lower() for value in (accounts or [])}
     with connect(db_path) as con:
         pid = Repository(con).project_id(project)
         rows = [
-            dict(row)
+            _conversation_seed_row(row, account_tokens)
             for row in con.execute(
-                """SELECT e.*,c.subject_clean,c.current_message_text,c.quoted_thread_text,
-                       c.forwarded_text
+                """SELECT e.id,e.sender,e.recipients,e.subject,e.original_message_id,
+                          e.raw_headers_json,e.has_attachments,e.sent_at,e.imported_at
                    FROM emails e
-                   LEFT JOIN clean_texts c ON c.id=(
-                       SELECT max(c2.id) FROM clean_texts c2 WHERE c2.email_id=e.id
-                   )
                    WHERE e.project_id=?
                    ORDER BY coalesce(e.sent_at,e.imported_at),e.id""",
                 (pid,),
             )
         ]
-        parent = {row["id"]: row["id"] for row in rows}
+        # Keep the union-find buffer compact because it scales with the archive size.
+        parent = array("I", range(len(rows)))
 
-        def find(email_id: int) -> int:
-            while parent[email_id] != email_id:
-                parent[email_id] = parent[parent[email_id]]
-                email_id = parent[email_id]
-            return email_id
+        def find(row_index: int) -> int:
+            while parent[row_index] != row_index:
+                parent[row_index] = parent[parent[row_index]]
+                row_index = parent[row_index]
+            return row_index
 
-        def union(first: int, second: int) -> None:
-            root_first, root_second = find(first), find(second)
+        def union(first_index: int, second_index: int) -> None:
+            root_first, root_second = find(first_index), find(second_index)
             if root_first != root_second:
                 parent[root_second] = root_first
 
         by_message_id = {
-            normalize_message_id(row["original_message_id"]): row["id"]
-            for row in rows
-            if normalize_message_id(row["original_message_id"])
+            row.message_id: index for index, row in enumerate(rows) if row.message_id
         }
-        relation_method = {row["id"]: "isolated" for row in rows}
-        subjects: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        latest_by_subject: dict[str, int] = {}
         explicit_links = 0
+        fallback_links = 0
         generic_subjects_skipped = 0
 
-        for row in rows:
-            headers = json.loads(row["raw_headers_json"] or "{}")
-            linked_ids = header_message_ids(headers.get("References"))
-            linked_ids += header_message_ids(headers.get("In-Reply-To"))
-            targets = [by_message_id[value] for value in linked_ids if value in by_message_id]
-            if targets:
-                for target in targets:
-                    union(row["id"], target)
-                relation_method[row["id"]] = "headers"
+        for row_index, row in enumerate(rows):
+            row.relation_code = RELATION_ISOLATED
+            linked = False
+            for linked_id in row.linked_ids:
+                target = by_message_id.get(linked_id)
+                if target is not None:
+                    union(row_index, target)
+                    linked = True
+            row.linked_ids = ()
+            if linked:
+                row.relation_code = RELATION_HEADERS
                 explicit_links += 1
-            subject = clean_subject(row["subject"] or "").lower()
-            if subject:
-                subjects[subject].append(row)
-
-        fallback_links = 0
-        for subject, items in subjects.items():
-            if len(subject) < 8 or subject in GENERIC_SUBJECTS:
-                generic_subjects_skipped += len(items)
+            subject = row.subject.casefold() if row.subject else ""
+            if not subject:
                 continue
-            for previous, current in zip(items, items[1:]):
-                if relation_method[current["id"]] == "headers":
-                    continue
-                same_people = normalized_participants(previous) & normalized_participants(current)
-                if _days_between(current["sent_at"], previous["sent_at"]) <= 45 and same_people:
-                    union(previous["id"], current["id"])
-                    relation_method[current["id"]] = "subject_participants_date"
+            if len(subject) < 8 or subject in GENERIC_SUBJECTS:
+                generic_subjects_skipped += 1
+                continue
+            previous = latest_by_subject.get(subject)
+            if previous is not None and row.relation_code != RELATION_HEADERS:
+                previous_row = rows[previous]
+                same_people = any(
+                    item in previous_row.participants for item in row.participants
+                )
+                if _days_between(row.sent_at, previous_row.sent_at) <= 45 and same_people:
+                    union(previous, row_index)
+                    row.relation_code = RELATION_SUBJECT_PARTICIPANTS_DATE
                     fallback_links += 1
+            latest_by_subject[subject] = row_index
 
-        groups: dict[int, list[dict[str, Any]]] = defaultdict(list)
-        for row in rows:
-            groups[find(row["id"])].append(row)
+        for row_index, row in enumerate(rows):
+            row.conversation_root = find(row_index)
+        del by_message_id
+        del latest_by_subject
+        parent = None
+        emails_count = len(rows)
 
         low_confidence = isolated = header_conversations = fallback_conversations = 0
-        conversation_examples: list[dict[str, Any]] = []
+        conversations_count = 0
+        long_examples: list[dict[str, Any]] = []
+        possible_false_positives: list[dict[str, Any]] = []
+        possible_broken_threads: list[dict[str, Any]] = []
+        isolated_examples: list[dict[str, Any]] = []
+        multi_message_examples: list[dict[str, Any]] = []
+        fallback_examples: list[dict[str, Any]] = []
 
-        for members in groups.values():
-            members.sort(key=lambda row: (row["sent_at"] or row["imported_at"], row["id"]))
-            explicit = sum(relation_method[row["id"]] == "headers" for row in members)
-            fallback = sum(
-                relation_method[row["id"]] == "subject_participants_date" for row in members
+        rows.sort(
+            key=lambda row: (
+                row.conversation_root,
+                row.sent_at or row.imported_at,
+                row.id,
             )
+        )
+        current_row_index = 0
+        for _, members_iter in groupby(rows, key=lambda row: row.conversation_root):
+            conversations_count += 1
+            explicit = 0
+            fallback = 0
+            incoming = 0
+            outgoing = 0
+            attachments_count = 0
+            message_count = 0
+            first_sent_at: str | None = None
+            first_imported_at: str | None = None
+            last_sent_at: str | None = None
+            last_subject = ""
+            participants_set: set[str] = set()
+            # Keep the per-conversation insert payload compact until the batch write.
+            conversation_email_ids = array("I")
+            conversation_relation_codes = array("B")
+            # Avoid allocating list objects for one-message / one-text conversations.
+            first_message_id: str | None = None
+            message_ids: list[str] | None = None
+
+            for position, row in enumerate(members_iter):
+                row_index = current_row_index + position
+                conversation_email_ids.append(row.id)
+                conversation_relation_codes.append(row.relation_code)
+                message_count += 1
+                explicit += int(row.relation_code == RELATION_HEADERS)
+                fallback += int(row.relation_code == RELATION_SUBJECT_PARTICIPANTS_DATE)
+                attachments_count += row.has_attachments or 0
+                if first_sent_at is None:
+                    first_sent_at = row.sent_at
+                    first_imported_at = row.imported_at
+                last_sent_at = row.sent_at
+                last_subject = row.subject or ""
+                participants_set.update(row.participants)
+                message_id = row.message_id
+                if message_id:
+                    if first_message_id is None:
+                        first_message_id = message_id
+                    elif message_ids is None:
+                        message_ids = [first_message_id, message_id]
+                        first_message_id = None
+                    else:
+                        message_ids.append(message_id)
+                incoming += int(row.is_incoming)
+                outgoing += int(not row.is_incoming)
+                row.participants = ()
+                row.is_incoming = True
+                row.has_attachments = 0
+                row.relation_code = RELATION_ISOLATED
+                row.subject = None
+                row.message_id = ""
+                row.sent_at = None
+                row.imported_at = None
+                row.conversation_root = -1
+                rows[row_index] = None
+
+            # Scorre i testi selezionati nell'ordine compatto per evitare un dizionario per-conversazione.
+            first_text: str | None = None
+            texts: list[str] | None = None
+            seen: set[bytes] = set()
+            for _email_id, selected_text in _conversation_selected_texts(
+                con, conversation_email_ids
+            ):
+                text = (selected_text or "").strip()
+                # Store the raw digest bytes so the de-dup set stays smaller.
+                if text:
+                    digest = hashlib.sha256(text.encode("utf-8", errors="replace")).digest()
+                    if digest not in seen:
+                        seen.add(digest)
+                        if first_text is None:
+                            first_text = text
+                        elif texts is None:
+                            texts = [first_text, text]
+                            first_text = None
+                        else:
+                            texts.append(text)
+
             method = (
                 "headers" if explicit else "subject_participants_date" if fallback else "isolated"
             )
@@ -190,29 +401,24 @@ def build_conversations(
             header_conversations += int(method == "headers")
             fallback_conversations += int(method == "subject_participants_date")
             low_confidence += int(confidence < 0.6)
-            isolated += int(len(members) == 1)
-            participants = sorted(
-                {person for row in members for person in normalized_participants(row)}
-            )
-            texts: list[str] = []
-            seen: set[str] = set()
-            for row in members:
-                text = (row["current_message_text"] or row["body_extracted_text"] or "").strip()
-                digest = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
-                if text and digest not in seen:
-                    texts.append(text)
-                    seen.add(digest)
-            subject = clean_subject(members[-1]["subject"] or "")
-            analysis = (subject + "\n\n" + "\n\n".join(texts))[:50000]
-            incoming = (
-                sum(
-                    not any(account in (row["sender"] or "").lower() for account in accounts)
-                    for row in members
-                )
-                if accounts
-                else len(members)
-            )
-            outgoing = len(members) - incoming
+            isolated += int(message_count == 1)
+            participants = sorted(participants_set)
+            subject = last_subject
+            if texts is None:
+                unique_clean_text = first_text or ""
+            else:
+                unique_clean_text = "\n\n".join(texts)
+            analysis = (subject + "\n\n" + unique_clean_text)[:50000]
+            if message_ids is None:
+                stable_message_ids = [first_message_id] if first_message_id else []
+            else:
+                stable_message_ids = message_ids
+            del participants_set
+            del seen
+            del first_message_id
+            del message_ids
+            del first_text
+            del texts
             reason = {
                 "headers": "Catena esplicita Message-ID / References / In-Reply-To.",
                 "subject_participants_date": (
@@ -230,16 +436,21 @@ def build_conversations(
                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     pid,
-                    stable_conversation_key(members),
+                    stable_conversation_key_from_parts(
+                        message_ids=stable_message_ids,
+                        fallback_subject=last_subject,
+                        fallback_first_date=(first_sent_at or first_imported_at or "")[:10],
+                        fallback_participants=participants,
+                    ),
                     subject,
-                    members[0]["sent_at"],
-                    members[-1]["sent_at"],
-                    len(members),
+                    first_sent_at,
+                    last_sent_at,
+                    message_count,
                     incoming,
                     outgoing,
-                    sum(row["has_attachments"] or 0 for row in members),
+                    attachments_count,
                     json.dumps(participants, ensure_ascii=False),
-                    "\n\n".join(texts),
+                    unique_clean_text,
                     analysis,
                     confidence,
                     method,
@@ -248,52 +459,59 @@ def build_conversations(
                     utcnow(),
                 ),
             )
+            del stable_message_ids
             conversation_id = int(cursor.lastrowid)
             con.executemany(
                 """INSERT INTO atlas_conversation_messages(
                        conversation_id,email_id,position,relation_method,relation_confidence
                    ) VALUES(?,?,?,?,?)""",
-                [
-                    (conversation_id, row["id"], position, relation_method[row["id"]], confidence)
-                    for position, row in enumerate(members)
-                ],
+                (
+                    (
+                        conversation_id,
+                        email_id,
+                        position,
+                        _relation_method_name(relation_code),
+                        confidence,
+                    )
+                    for position, (email_id, relation_code) in enumerate(
+                        zip(conversation_email_ids, conversation_relation_codes)
+                    )
+                ),
             )
-            conversation_examples.append(
-                {
-                    "id": conversation_id,
-                    "subject": subject,
-                    "messages": len(members),
-                    "method": method,
-                    "confidence": confidence,
-                    "reason": reason,
-                }
-            )
+            del conversation_email_ids
+            del conversation_relation_codes
+            example = {
+                "id": conversation_id,
+                "subject": subject,
+                "messages": message_count,
+                "method": method,
+                "confidence": confidence,
+                "reason": reason,
+            }
+            _insert_top_by_messages(long_examples, example, limit=10)
+            if method == "subject_participants_date":
+                _append_capped(fallback_examples, example, limit=20)
+                if message_count >= 3:
+                    _append_capped(possible_false_positives, example, limit=10)
+            if method == "isolated":
+                _append_capped(isolated_examples, example, limit=20)
+                if len(subject) >= 8:
+                    _append_capped(possible_broken_threads, example, limit=10)
+            if message_count > 1:
+                _append_capped(multi_message_examples, example, limit=20)
+            current_row_index += message_count
 
-    long_examples = sorted(conversation_examples, key=lambda item: item["messages"], reverse=True)[
-        :10
-    ]
-    possible_false_positives = [
-        item
-        for item in conversation_examples
-        if item["method"] == "subject_participants_date" and item["messages"] >= 3
-    ][:10]
-    possible_broken_threads = [
-        item
-        for item in conversation_examples
-        if item["method"] == "isolated" and len(item["subject"]) >= 8
-    ][:10]
-    isolated_examples = [item for item in conversation_examples if item["method"] == "isolated"][
-        :20
-    ]
-    multi_message_examples = [item for item in conversation_examples if item["messages"] > 1][:20]
+        rows.clear()
+        del rows
+
     result = {
         "project": project,
         "mode": mode,
         "reused": False,
         "reset": reset_report,
-        "emails": len(rows),
-        "conversations": len(groups),
-        "reduction_ratio": round(1 - len(groups) / max(len(rows), 1), 3),
+        "emails": emails_count,
+        "conversations": conversations_count,
+        "reduction_ratio": round(1 - conversations_count / max(emails_count, 1), 3),
         "from_explicit_headers": header_conversations,
         "from_fallback": fallback_conversations,
         "isolated": isolated,
@@ -301,19 +519,17 @@ def build_conversations(
         "explicit_links": explicit_links,
         "fallback_links": fallback_links,
         "generic_subject_messages_excluded_from_fallback": generic_subjects_skipped,
-        "mean_messages": round(len(rows) / max(len(groups), 1), 2),
+        "mean_messages": round(emails_count / max(conversations_count, 1), 2),
         "reconstruction_quality": {
-            "multi_message": len(groups) - isolated,
-            "isolated_percent": round(isolated * 100 / max(len(groups), 1), 1),
+            "multi_message": conversations_count - isolated,
+            "isolated_percent": round(isolated * 100 / max(conversations_count, 1), 1),
             "header_based": header_conversations,
             "fallback_based": fallback_conversations,
             "low_confidence": low_confidence,
         },
         "isolated_conversations": isolated_examples,
         "multi_message_conversations": multi_message_examples,
-        "fallback_conversations": [
-            item for item in conversation_examples if item["method"] == "subject_participants_date"
-        ][:20],
+        "fallback_conversations": fallback_examples,
         "examples_to_verify": possible_false_positives + possible_broken_threads,
         "possible_fragility_causes": [
             "Posta inviata non importata.",

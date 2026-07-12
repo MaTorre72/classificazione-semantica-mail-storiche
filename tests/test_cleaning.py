@@ -1,6 +1,6 @@
 import pytest
 
-from email_cluster.cleaning.normalizer import build_clean_text
+from email_cluster.cleaning.normalizer import build_clean_text, clean_subject
 from email_cluster.config import CleaningConfig
 
 
@@ -81,3 +81,24 @@ def test_attachment_only_is_excluded() -> None:
     result = clean("Documento", "", attachments=True)
     assert result.message_type == "attachment_only"
     assert result.excluded_from_main_clustering
+
+
+def test_email_header_noise_and_date_patterns_are_removed() -> None:
+    result = clean(
+        "Subject: AIA data 03_2026",
+        "Your reference\nSent\nCome\nAggiornamento pratica emissioni AIA.\nData 10/06/2024",
+    )
+    lowered = result.semantic_text.lower()
+    for token in ("your", "come", "data", "sent", "subject", "03_2026", "10/06/2024"):
+        assert token not in lowered
+    assert "aia" in lowered
+    assert "emissioni" in lowered
+
+
+def test_subject_clean_removes_email_noise_tokens_and_keeps_signal() -> None:
+    assert clean_subject("Re: Subject AIA sent 03_2026 data") == "AIA"
+
+
+def test_cleaning_version_is_bumped_for_historical_email_rules() -> None:
+    result = clean("Analisi", "Testo operativo utile per classificazione.")
+    assert result.cleaning_version == "v2.1.0"

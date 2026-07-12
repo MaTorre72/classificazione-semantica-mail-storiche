@@ -16,7 +16,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from email_cluster.atlas.conversations import build_conversations
-from email_cluster.atlas.discovery import heuristic_discovery, scope_for_text
+from email_cluster.atlas.discovery import classify_scope, heuristic_discovery
 from email_cluster.atlas.entities import extract_entities
 from email_cluster.atlas.inventory import inventory
 from email_cluster.atlas.parsing import parse_and_clean
@@ -27,7 +27,17 @@ from email_cluster.storage.repository import Repository
 from email_cluster.storage.repository import blob_to_embedding
 
 
-def _write_csv(path: Path, rows: Iterable[dict[str, Any]], fields: list[str]) -> None:
+_MISSING = object()
+
+
+def _csv_value(row: Any, field: str) -> Any:
+    try:
+        return row[field]
+    except (KeyError, IndexError, TypeError):
+        return _MISSING
+
+
+def _write_csv(path: Path, rows: Iterable[Any], fields: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
@@ -38,7 +48,8 @@ def _write_csv(path: Path, rows: Iterable[dict[str, Any]], fields: list[str]) ->
                     key: json.dumps(value, ensure_ascii=False)
                     if isinstance(value, (list, dict))
                     else value
-                    for key, value in row.items()
+                    for key in fields
+                    if (value := _csv_value(row, key)) is not _MISSING
                 }
             )
 
@@ -51,23 +62,79 @@ def _loads(value: str | None) -> list[Any]:
         return []
 
 
-def _conversation_rows(con, project_id: int) -> list[dict[str, Any]]:
+def _conversation_rows(
+    con,
+    project_id: int,
+    *,
+    limit: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    source_folders: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
     rows = []
-    for row in con.execute(
-        """SELECT c.*,d.content semantic_text,d.metadata_json,
-                  group_concat(DISTINCT ae.display_name) entity_names,
-                  group_concat(DISTINCT ae.entity_type || ':' || ae.display_name) typed_entities,
-                  group_concat(DISTINCT a.filename) attachment_names
-           FROM atlas_conversations c
-           LEFT JOIN atlas_semantic_documents d ON d.project_id=c.project_id
-                AND d.document_level='conversation' AND d.source_id=c.id
-           LEFT JOIN atlas_conversation_messages cm ON cm.conversation_id=c.id
-           LEFT JOIN atlas_entity_mentions em ON em.email_id=cm.email_id
-           LEFT JOIN atlas_entities ae ON ae.id=em.entity_id
-           LEFT JOIN attachments a ON a.email_id=cm.email_id
-           WHERE c.project_id=? GROUP BY c.id ORDER BY c.id""",
-        (project_id,),
-    ):
+    # Pre-aggregate the wide one-to-many relations separately so large archives
+    # do not build a cross-product between messages, entities, and attachments.
+    query = """
+        WITH conversation_entities AS (
+            SELECT cm.conversation_id,
+                   group_concat(DISTINCT ae.display_name) AS entity_names
+            FROM atlas_conversation_messages cm
+            JOIN atlas_conversations c
+              ON c.id = cm.conversation_id
+             AND c.project_id = ?
+            LEFT JOIN atlas_entity_mentions em ON em.email_id = cm.email_id
+            LEFT JOIN atlas_entities ae ON ae.id = em.entity_id
+            GROUP BY cm.conversation_id
+        ),
+        conversation_attachments AS (
+            SELECT cm.conversation_id,
+                   group_concat(DISTINCT a.filename) AS attachment_names
+            FROM atlas_conversation_messages cm
+            JOIN atlas_conversations c
+              ON c.id = cm.conversation_id
+             AND c.project_id = ?
+            LEFT JOIN attachments a ON a.email_id = cm.email_id
+            GROUP BY cm.conversation_id
+        )
+        SELECT c.id,c.subject_normalized,c.date_start,c.date_end,c.message_count,
+               c.incoming_count,c.outgoing_count,c.attachments_count,c.participants_json,
+               c.unique_clean_text,c.confidence,c.warnings_json,c.status,
+               coalesce(nullif(d.content,''),c.analysis_text) semantic_text,
+               ce.entity_names,
+               ca.attachment_names
+        FROM atlas_conversations c
+        LEFT JOIN atlas_semantic_documents d ON d.project_id=c.project_id
+             AND d.document_level='conversation' AND d.source_id=c.id
+        LEFT JOIN conversation_entities ce ON ce.conversation_id = c.id
+        LEFT JOIN conversation_attachments ca ON ca.conversation_id = c.id
+        WHERE c.project_id=?
+    """
+    params: list[Any] = [project_id, project_id, project_id]
+    if date_from:
+        query += " AND date(c.date_end) >= date(?)"
+        params.append(date_from)
+    if date_to:
+        query += " AND date(c.date_start) <= date(?)"
+        params.append(date_to)
+    if source_folders:
+        folder_clauses = []
+        for folder in source_folders:
+            folder_clauses.append(
+                "EXISTS (SELECT 1 FROM atlas_conversation_messages fcm "
+                "JOIN emails fe ON fe.id=fcm.email_id "
+                "JOIN source_files sf ON sf.id=fe.source_file_id "
+                "WHERE fcm.conversation_id=c.id "
+                "AND (lower(replace(sf.path, '\\', '/')) LIKE ? "
+                "OR lower(replace(sf.path, '\\', '/')) LIKE ?))"
+            )
+            normalized = folder.lower().strip("/\\")
+            params.extend((f"%/{normalized}", f"%/{normalized}/%"))
+        query += " AND (" + " OR ".join(folder_clauses) + ")"
+    query += " ORDER BY c.id"
+    if limit is not None:
+        query += " LIMIT ?"
+        params.append(limit)
+    for row in con.execute(query, tuple(params)):
         item = dict(row)
         item["participants"] = _loads(item.pop("participants_json", "[]"))
         item["warnings"] = _loads(item.pop("warnings_json", "[]"))
@@ -82,9 +149,17 @@ def _conversation_rows(con, project_id: int) -> list[dict[str, Any]]:
         )
         item["year"] = (item.get("date_start") or "")[:4]
         item["month"] = (item.get("date_start") or "")[5:7]
-        item["probable_scope"] = scope_for_text(
-            item.get("semantic_text") or item.get("analysis_text") or ""
+        scope = classify_scope(
+            item.get("semantic_text") or "",
+            subject=item.get("subject_normalized") or "",
+            participants=item["participants"],
         )
+        item["probable_scope"] = scope["scope"]
+        item["scope_confidence"] = scope["confidence"]
+        item["scope_reason"] = scope["reason"]
+        # The query already projects only the columns needed downstream.
+        item.pop("entity_names", None)
+        item.pop("attachment_names", None)
         rows.append(item)
     return rows
 
@@ -93,18 +168,15 @@ def _semantic_points(con, rows: list[dict[str, Any]]) -> tuple[list[dict[str, An
     vectors: list[np.ndarray] = []
     source_ids: list[int] = []
     try:
-        cached = list(
-            con.execute(
-                """SELECT d.source_id,e.embedding FROM atlas_embedding_cache e
-                   JOIN atlas_semantic_documents d ON d.id=e.semantic_document_id
-                   WHERE d.document_level='conversation' ORDER BY d.source_id"""
-            )
-        )
-        for item in cached:
+        for item in con.execute(
+            """SELECT d.source_id,e.embedding FROM atlas_embedding_cache e
+               JOIN atlas_semantic_documents d ON d.id=e.semantic_document_id
+               WHERE d.document_level='conversation' ORDER BY d.source_id"""
+        ):
             vectors.append(blob_to_embedding(item["embedding"]))
             source_ids.append(int(item["source_id"]))
     except Exception:
-        cached = []
+        pass
     method = "embeddings_pca" if vectors else "tfidf_pca"
     if not vectors and rows:
         texts = [row.get("semantic_text") or row.get("analysis_text") or "" for row in rows]
@@ -365,27 +437,41 @@ def export_study_pack(db_path: Path, project: str, output: Path) -> dict[str, An
         similarity_edges = _similarity_edges(rows)
         edges, nodes = _edges_and_nodes(rows, terms)
         candidates = _candidate_rows(con, pid)
-        message_rows = [
-            dict(row)
-            for row in con.execute(
+        # Stream the row-heavy exports directly from the cursor to avoid
+        # holding an extra materialized copy in memory.
+        _write_csv(
+            output / "conversation_messages.csv",
+            con.execute(
                 """SELECT cm.conversation_id,cm.email_id,cm.position,cm.relation_method,cm.relation_confidence,e.sent_at,e.sender,e.subject FROM atlas_conversation_messages cm JOIN atlas_conversations c ON c.id=cm.conversation_id JOIN emails e ON e.id=cm.email_id WHERE c.project_id=? ORDER BY cm.conversation_id,cm.position""",
                 (pid,),
-            )
-        ]
-        entities = [
-            dict(row)
-            for row in con.execute(
+            ),
+            [
+                "conversation_id",
+                "email_id",
+                "position",
+                "relation_method",
+                "relation_confidence",
+                "sent_at",
+                "sender",
+                "subject",
+            ],
+        )
+        _write_csv(
+            output / "entities.csv",
+            con.execute(
                 "SELECT id entity_id,display_name entity,entity_type,frequency,confidence FROM atlas_entities WHERE project_id=? ORDER BY frequency DESC",
                 (pid,),
-            )
-        ]
-        attachments = [
-            dict(row)
-            for row in con.execute(
+            ),
+            ["entity_id", "entity", "entity_type", "frequency", "confidence"],
+        )
+        _write_csv(
+            output / "attachments.csv",
+            con.execute(
                 """SELECT cm.conversation_id,a.email_id,a.filename,a.attachment_type,a.mime_type,a.size_bytes FROM attachments a JOIN atlas_conversation_messages cm ON cm.email_id=a.email_id JOIN atlas_conversations c ON c.id=cm.conversation_id WHERE c.project_id=?""",
                 (pid,),
-            )
-        ]
+            ),
+            ["conversation_id", "email_id", "filename", "attachment_type", "mime_type", "size_bytes"],
+        )
     conversation_export = []
     for row in rows:
         point = point_map.get(row["id"], {})
@@ -426,6 +512,15 @@ def export_study_pack(db_path: Path, project: str, output: Path) -> dict[str, An
                 "review_status": row["status"],
             }
         )
+    subject_rows = [
+        {
+            "subject": row["subject_normalized"],
+            "conversation_id": row["conversation_id"],
+            "scope": row["probable_scope"],
+        }
+        for row in conversation_export
+    ]
+    del rows
     feature_fields = [
         "conversation_id",
         "message_count",
@@ -443,56 +538,59 @@ def export_study_pack(db_path: Path, project: str, output: Path) -> dict[str, An
         conversation_export,
         list(conversation_export[0]) if conversation_export else ["conversation_id"],
     )
-    _write_csv(
-        output / "conversation_messages.csv",
-        message_rows,
-        [
-            "conversation_id",
-            "email_id",
-            "position",
-            "relation_method",
-            "relation_confidence",
-            "sent_at",
-            "sender",
-            "subject",
-        ],
-    )
     _write_csv(output / "conversation_features.csv", conversation_export, feature_fields)
+    # Keep only the fields the HTML report still needs before the long tail of exports.
+    conversation_export = [
+        {
+            "message_count": row["message_count"],
+            "year": row["year"],
+            "probable_scope": row["probable_scope"],
+            "sender_domains": row["sender_domains"],
+        }
+        for row in conversation_export
+    ]
+    conversation_total = len(conversation_export)
+    email_total = sum(row["message_count"] for row in conversation_export)
+    report_years = Counter(row["year"] or "Senza data" for row in conversation_export)
+    report_scopes = Counter(row["probable_scope"] for row in conversation_export)
+    report_domains = Counter(
+        domain for row in conversation_export for domain in row["sender_domains"]
+    )
+    report_isolated = sum(row["message_count"] == 1 for row in conversation_export)
+    del conversation_export
     _write_csv(
         output / "semantic_points.csv",
         points,
         ["conversation_id", "x", "y", "label", "group", "message_count", "method"],
     )
+    points = [
+        {
+            "x": row["x"],
+            "y": row["y"],
+            "label": row["label"],
+            "message_count": row["message_count"],
+        }
+        for row in points
+    ]
     _write_csv(
         output / "similarity_edges.csv", similarity_edges, ["source", "target", "similarity"]
     )
-    _write_csv(
-        output / "entities.csv",
-        entities,
-        ["entity_id", "entity", "entity_type", "frequency", "confidence"],
-    )
+    del similarity_edges
     _write_csv(
         output / "subjects.csv",
-        [
-            {
-                "subject": row["subject_normalized"],
-                "conversation_id": row["id"],
-                "scope": row["probable_scope"],
-            }
-            for row in rows
-        ],
+        subject_rows,
         ["subject", "conversation_id", "scope"],
     )
+    del subject_rows
     _write_csv(
         output / "terms.csv",
         terms,
         ["term", "frequency", "document_frequency", "probable_area", "example_conversations"],
     )
-    _write_csv(
-        output / "attachments.csv",
-        attachments,
-        ["conversation_id", "email_id", "filename", "attachment_type", "mime_type", "size_bytes"],
-    )
+    terms = [
+        {"term": row["term"], "document_frequency": row["document_frequency"]}
+        for row in terms
+    ]
     _write_csv(
         output / "candidate_clusters.csv",
         [
@@ -508,6 +606,15 @@ def export_study_pack(db_path: Path, project: str, output: Path) -> dict[str, An
     )
     _write_csv(output / "candidate_categories.csv", candidates, WORKSPACE_FIELDS)
     _write_csv(output / "atlas_draft.csv", candidates, WORKSPACE_FIELDS)
+    _write_csv(output / "classification_workspace.csv", candidates, WORKSPACE_FIELDS)
+    candidates = [
+        {
+            "label": row["proposed_name"],
+            "conversation_count": row["conversation_count"],
+            "warnings": row.get("warnings") or [],
+        }
+        for row in candidates
+    ]
     _write_csv(
         output / "nodes.csv",
         nodes,
@@ -518,15 +625,30 @@ def export_study_pack(db_path: Path, project: str, output: Path) -> dict[str, An
         edges,
         ["source", "target", "edge_type", "weight", "example", "source_type", "target_type"],
     )
-    _write_csv(output / "classification_workspace.csv", candidates, WORKSPACE_FIELDS)
+    node_count = len(nodes)
+    edge_count = len(edges)
+    del nodes
+    del edges
     _write_orange_docs(output)
     _write_study_report(
-        output / "study_report.html", rows, points, candidates, terms, nodes, edges, point_method
+        output / "study_report.html",
+        conversation_total,
+        email_total,
+        report_years,
+        report_scopes,
+        report_domains,
+        report_isolated,
+        points,
+        candidates,
+        terms,
+        node_count,
+        edge_count,
+        point_method,
     )
     return {
         "output": str(output),
         "files": sorted(path.name for path in output.iterdir()),
-        "conversations": len(rows),
+        "conversations": conversation_total,
         "semantic_map_method": point_method,
         "embeddings_used": point_method == "embeddings_pca",
         "warnings": []
@@ -571,13 +693,20 @@ def _write_orange_docs(output: Path) -> None:
 
 
 def _write_study_report(
-    path: Path, rows, points, candidates, terms, nodes, edges, method: str
+    path: Path,
+    conversation_total,
+    email_total,
+    years,
+    scopes,
+    domains,
+    isolated,
+    points,
+    candidates,
+    terms,
+    node_count: int,
+    edge_count: int,
+    method: str,
 ) -> None:
-    years = Counter(row["year"] or "Senza data" for row in rows)
-    scopes = Counter(row["probable_scope"] for row in rows)
-    domains = Counter(domain for row in rows for domain in row["domains"])
-    isolated = sum(row["message_count"] == 1 for row in rows)
-
     def bars(values):
         return "".join(
             f"<tr><td>{html.escape(str(k))}</td><td>{v}</td><td><div class='bar' style='width:{min(100, v * 4)}px'></div></td></tr>"
@@ -589,7 +718,7 @@ def _write_study_report(
         for p in points[:500]
     )
     path.write_text(
-        f"""<!doctype html><meta charset='utf-8'><title>Email Atlas - Studio Report</title><style>body{{font:15px system-ui;max-width:1200px;margin:30px auto;color:#17212b}}.grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}.card,section{{border:1px solid #ccd5d8;padding:16px;margin:14px 0}}.card strong{{font-size:28px;display:block}}table{{border-collapse:collapse;width:100%}}td,th{{padding:7px;border-bottom:1px solid #ddd;text-align:left}}.bar{{height:10px;background:#087f75}}svg{{width:100%;height:480px;background:#f5f7f7}}circle{{fill:#087f75;opacity:.65}}</style><h1>Studio dell'archivio storico</h1><p>Laboratorio esplorativo locale. Metodo mappa: <strong>{method}</strong>.</p><div class='grid'><div class='card'><strong>{sum(r["message_count"] for r in rows)}</strong>Email</div><div class='card'><strong>{len(rows)}</strong>Conversazioni</div><div class='card'><strong>{isolated}</strong>Isolate</div><div class='card'><strong>{len(rows) - isolated}</strong>Multi-messaggio</div></div><section><h2>Distribuzioni temporali</h2><table>{bars(years.most_common())}</table></section><section><h2>Distribuzione ambiti provvisori</h2><table>{bars(scopes.most_common())}</table></section><section><h2>Domini principali</h2><table>{bars(domains.most_common(30))}</table></section><section><h2>Mappa semantica 2D</h2><p>{"Coordinate da embedding." if method == "embeddings_pca" else "Embedding non disponibili: fallback TF-IDF + PCA."}</p><svg viewBox='0 0 100 100' preserveAspectRatio='xMidYMid meet'>{dots}</svg></section><section><h2>Cluster e categorie provvisorie</h2><p>{len(candidates)} categorie candidate. Controlla cluster piccoli, grandi o frammentati nel CSV.</p></section><section><h2>Rete relazionale</h2><p>{len(nodes)} nodi e {len(edges)} archi esportati per Orange, Gephi o Cytoscape.</p></section><section><h2>Termini principali</h2><table>{bars([(t["term"], t["document_frequency"]) for t in terms[:30]])}</table></section><section><h2>Raccomandazioni per la classificazione</h2><ul><li>Valuta prima categorie con molte conversazioni e termini coerenti.</li><li>Unisci proposte piccole con soggetti e domini simili.</li><li>Escludi rumore personale o promozionale non utile.</li><li>Compila classification_workspace.csv prima dell'import finale.</li></ul></section>""",
+        f"""<!doctype html><meta charset='utf-8'><title>Email Atlas - Studio Report</title><style>body{{font:15px system-ui;max-width:1200px;margin:30px auto;color:#17212b}}.grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}.card,section{{border:1px solid #ccd5d8;padding:16px;margin:14px 0}}.card strong{{font-size:28px;display:block}}table{{border-collapse:collapse;width:100%}}td,th{{padding:7px;border-bottom:1px solid #ddd;text-align:left}}.bar{{height:10px;background:#087f75}}svg{{width:100%;height:480px;background:#f5f7f7}}circle{{fill:#087f75;opacity:.65}}</style><h1>Studio dell'archivio storico</h1><p>Laboratorio esplorativo locale. Metodo mappa: <strong>{method}</strong>.</p><div class='grid'><div class='card'><strong>{email_total}</strong>Email</div><div class='card'><strong>{conversation_total}</strong>Conversazioni</div><div class='card'><strong>{isolated}</strong>Isolate</div><div class='card'><strong>{conversation_total - isolated}</strong>Multi-messaggio</div></div><section><h2>Distribuzioni temporali</h2><table>{bars(years.most_common())}</table></section><section><h2>Distribuzione ambiti provvisori</h2><table>{bars(scopes.most_common())}</table></section><section><h2>Domini principali</h2><table>{bars(domains.most_common(30))}</table></section><section><h2>Mappa semantica 2D</h2><p>{"Coordinate da embedding." if method == "embeddings_pca" else "Embedding non disponibili: fallback TF-IDF + PCA."}</p><svg viewBox='0 0 100 100' preserveAspectRatio='xMidYMid meet'>{dots}</svg></section><section><h2>Cluster e categorie provvisorie</h2><p>{len(candidates)} categorie candidate. Controlla cluster piccoli, grandi o frammentati nel CSV.</p></section><section><h2>Rete relazionale</h2><p>{node_count} nodi e {edge_count} archi esportati per Orange, Gephi o Cytoscape.</p></section><section><h2>Termini principali</h2><table>{bars([(t["term"], t["document_frequency"]) for t in terms[:30]])}</table></section><section><h2>Raccomandazioni per la classificazione</h2><ul><li>Valuta prima categorie con molte conversazioni e termini coerenti.</li><li>Unisci proposte piccole con soggetti e domini simili.</li><li>Escludi rumore personale o promozionale non utile.</li><li>Compila classification_workspace.csv prima dell'import finale.</li></ul></section>""",
         encoding="utf-8",
     )
 
@@ -632,32 +761,59 @@ def build_study_dataset(
 
 
 def import_classification(
-    db_path: Path, project: str, source: Path, output: Path
+    db_path: Path,
+    project: str,
+    source: Path,
+    output: Path,
+    *,
+    validate_candidate_ids: bool = True,
 ) -> dict[str, Any]:
     if not source.exists():
         raise ValueError(f"File non trovato: {source}")
     accepted = {"approve", "approved", "approva", "include", "includi"}
     with source.open(encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"candidate_id", "human_decision", "proposed_name"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"Colonne mancanti: {', '.join(sorted(missing))}")
         decisions = [
             row
-            for row in csv.DictReader(handle)
+            for row in reader
             if row.get("human_decision", "").strip().lower() in accepted
         ]
-    from email_cluster.atlas.review import review_action
-
+    candidate_ids: list[int] = []
     for row in decisions:
         try:
-            review_action(
-                db_path,
-                project,
-                int(row.get("candidate_id") or 0),
-                "approve",
-                row.get("final_name") or row.get("proposed_name"),
-                row.get("notes", ""),
+            candidate_ids.append(int(row.get("candidate_id") or 0))
+        except ValueError as exc:
+            raise ValueError(f"candidate_id non valido: {row.get('candidate_id')!r}") from exc
+    if len(candidate_ids) != len(set(candidate_ids)):
+        raise ValueError("candidate_id duplicato nelle decisioni approvate")
+    with connect(db_path) as con:
+        pid = Repository(con).project_id(project)
+        existing = {
+            int(row[0])
+            for row in con.execute(
+                "SELECT id FROM atlas_candidate_categories WHERE project_id=?", (pid,)
             )
-        except ValueError:
-            # Re-importing an already approved workspace is intentionally idempotent.
-            pass
+        }
+    unknown = sorted(set(candidate_ids) - existing)
+    if unknown and validate_candidate_ids:
+        raise ValueError(f"Categorie candidate non trovate: {', '.join(map(str, unknown))}")
+    from email_cluster.atlas.review import review_action
+
+    for row, candidate_id in zip(decisions, candidate_ids):
+        if candidate_id not in existing:
+            continue
+        review_action(
+            db_path,
+            project,
+            candidate_id,
+            "approve",
+            row.get("final_name") or row.get("proposed_name"),
+            row.get("notes", ""),
+        )
     final = []
     for row in decisions:
         final.append(

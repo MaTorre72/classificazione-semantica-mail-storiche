@@ -88,17 +88,23 @@ def import_emails(
     project: Annotated[str, typer.Option("--project", help="Nome progetto.")],
     db: DbOpt = Path("data/email_cluster.sqlite"),
     config: ConfigOpt = Path("config/default.yaml"),
+    sample_size: Annotated[int | None, typer.Option("--sample-size", help="Limite massimo di messaggi da importare.")] = None,
 ) -> None:
     create_schema(db)
     cfg = load_config(config)
+    if sample_size is not None and sample_size <= 0:
+        raise typer.BadParameter("--sample-size deve essere maggiore di zero")
     imported = 0
     duplicates = 0
     unchanged_files = 0
     errors = 0
+    processed_messages = 0
     with connect(db) as con:
         repo = Repository(con)
         project_id = ensure_project(con, project)
         for candidate in scan_local_folder(source):
+            if sample_size is not None and processed_messages >= sample_size:
+                break
             candidate_path = str(candidate.path.resolve())
             file_hash = file_sha256(candidate.path)
             if repo.source_file_is_current(project_id, candidate_path, file_hash):
@@ -137,8 +143,11 @@ def import_emails(
                         max_attachment_size_mb=cfg.attachments.max_file_size_mb,
                     )
                 )
+                if sample_size is not None:
+                    parsed_messages = islice(parsed_messages, max(sample_size - processed_messages, 0))
                 for parsed in parsed_messages:
                     found_for_file += 1
+                    processed_messages += 1
                     try:
                         email_id = repo.insert_email(project_id, source_file_id, parsed)
                         if email_id is None:

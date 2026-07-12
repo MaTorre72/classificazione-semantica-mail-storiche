@@ -4,7 +4,16 @@
 
 Il progetto prepara conversazioni, dataset, distribuzioni, mappe semantiche, reti di relazioni e categorie candidate. Gli output possono essere esplorati nella GUI, in Orange Data Mining, Excel, LibreOffice, Gephi, Cytoscape o Python. Nessuna email viene spostata e nessun dato viene inviato fuori dal computer.
 
-## Studio Workbench
+## Avvio consigliato
+
+Fai doppio clic su `EMAIL_ATLAS.bat`: e il menu principale per creare o aggiornare lo studio,
+controllare il workspace, costruire l'Atlante e generare l'export Orange. Lavora sempre su una
+**copia locale** dello snapshot Thunderbird/MBOX, mai sul profilo Thunderbird attivo.
+
+Percorso minimo: `EMAIL_ATLAS.bat` -> `1` -> leggi `study_report.html` -> revisiona
+`classification_workspace.csv` -> riapri il menu e scegli `2`.
+
+## Interfacce disponibili
 
 La GUI ha quattro sezioni:
 
@@ -16,8 +25,8 @@ La GUI ha quattro sezioni:
 Avvio Windows:
 
 ```text
-EMAIL_ATLAS.bat      menu guidato consigliato
-AVVIA_CONSOLE.bat
+EMAIL_ATLAS.bat      menu guidato e punto di ingresso consigliato
+AVVIA_CONSOLE.bat    interfaccia grafica minima, facoltativa
 ```
 
 Per una spiegazione completa, parti da [Guida completa all'uso](docs/guida_uso_completa.md).
@@ -47,6 +56,7 @@ Se gli embedding non sono disponibili, la mappa usa TF-IDF e PCA e lo dichiara n
 
 ## Documentazione
 
+- [Indice della documentazione](docs/README.md)
 - [Studio Workbench](docs/studio_workbench.md)
 - [Snapshot Thunderbird/MBOX](docs/thunderbird_mbox_study.md)
 - [Guida completa all'uso](docs/guida_uso_completa.md)
