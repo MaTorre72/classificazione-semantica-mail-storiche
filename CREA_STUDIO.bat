@@ -18,10 +18,18 @@ if "%WORKSPACE%"=="" set "WORKSPACE=workspace_studio_email"
 set /p "ALLEGATI=Estrarre testo allegati supportati? [S/n]: "
 set "ATTACH=--with-attachments-text"
 if /i "%ALLEGATI%"=="n" set "ATTACH=--no-attachments-text"
+set "REBUILD="
+if exist "%WORKSPACE%\email_atlas.sqlite" (
+  echo.
+  echo Se hai aggiunto nuove cartelle o messaggi a uno studio gia elaborato,
+  echo occorre ricostruire conversazioni e derivati. Verra creato un backup SQLite.
+  set /p "RICOSTRUISCI=Ricostruire conversazioni con backup? [s/N]: "
+  if /i "%RICOSTRUISCI%"=="s" set "REBUILD=--rebuild-stage build_conversations"
+)
 
 echo.
 echo Avvio studio locale. Non chiudere questa finestra.
-"%ATLAS%" study --input "%INPUT%" --workspace "%WORKSPACE%" %ATTACH%
+"%ATLAS%" study --input "%INPUT%" --workspace "%WORKSPACE%" %ATTACH% %REBUILD%
 if errorlevel 1 (
   echo ERRORE: consultare il messaggio sopra.
   exit /b 1

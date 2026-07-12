@@ -1,5 +1,15 @@
 # Run Log
 
+## 2026-07-12 - aggiornamento workspace grande completato con rebuild e resume allegati
+
+- Task: `EA-INCREMENTAL-REBUILD-AND-ATTACHMENT-RESUME`
+- Esito: completed
+- Modifiche: `CREA_STUDIO.bat` propone la ricostruzione con backup quando il database esiste; l'errore indica il comando CLI reale; l'estrazione allegati seleziona solo righe `metadata_only` e salta le sorgenti già completamente elaborate.
+- Verifiche eseguite: test launcher e attachment resume; rebuild reale con backup; riprese mirate dell'estrazione; finalizzazione completa di `wsp_2`; quality checks completi.
+- Evidenze: 26.740 email, 17.430 conversazioni, 40 topic, 2.446 inviate, 24.294 ricevute, 22.967 allegati e 12/12 stage completati senza warning. Esiti allegati: 1.954 `extracted`, 13.587 `unsupported`, 7.417 `dependency_missing`, 9 `too_large`, 0 `metadata_only`.
+- Rischi/limiti: la finalizzazione completa ha richiesto circa 17 minuti senza output intermedio; il progresso visibile degli stage lunghi resta un miglioramento futuro separato.
+- Prossimo task suggerito: nessun task candidabile noto.
+
 ## 2026-07-12 - collisione stable_key conversazioni corretta
 
 - Task: `EA-CONVERSATION-STABLE-KEY-COLLISION`

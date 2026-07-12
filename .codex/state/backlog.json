@@ -10,6 +10,24 @@
   },
   "tasks": [
     {
+      "id": "EA-INCREMENTAL-REBUILD-AND-ATTACHMENT-RESUME",
+      "title": "rebuild sicuro e ripresa incrementale allegati",
+      "area": "workspace-stage-management",
+      "priority": "P0",
+      "priority_order": 1,
+      "description": "Esporre il rebuild con backup nel BAT e saltare le sorgenti allegati già completate.",
+      "estimated_files": ["CREA_STUDIO.bat", "src/email_cluster/atlas/conversations.py", "src/email_cluster/atlas/workspace_study.py", "tests/test_windows_launchers.py", "docs/*"],
+      "commands": ["email-atlas study --rebuild-stage build_conversations", "email-atlas study --stages extract_attachment_text_optional"],
+      "tests_to_add": ["prompt rebuild launcher", "resume attachment stage"],
+      "acceptance_criteria": ["backup prima del rebuild", "ripresa solo metadata_only", "wsp_2 completo"],
+      "risk": "medium",
+      "dependencies": ["EA-CONVERSATION-STABLE-KEY-COLLISION"],
+      "status": "done",
+      "blocked": false,
+      "last_cycle_at": "2026-07-12T23:59:00+02:00",
+      "last_cycle_note": "wsp_2 completato: 26740 email, 17430 conversazioni, 40 topic, 22967 allegati, 12/12 stage, nessun warning."
+    },
+    {
       "id": "EA-CONVERSATION-STABLE-KEY-COLLISION",
       "title": "impedire collisioni stable_key su archivi reali",
       "area": "conversation-reconstruction",

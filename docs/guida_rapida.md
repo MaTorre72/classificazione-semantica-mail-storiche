@@ -15,7 +15,9 @@ Thunderbird attivo e non lavorare mentre Thunderbird usa quei file.
 3. Indica la cartella contenente la copia MBOX.
 4. Indica un workspace diverso dalla sorgente, oppure premi Invio per `workspace_studio_email`.
 5. Per una prima prova su un archivio grande rispondi `n` al testo allegati.
-6. Attendi il completamento e apri `study_report.html`.
+6. Se aggiorni un workspace già elaborato con nuove email, rispondi `s` alla ricostruzione delle
+   conversazioni: viene creato prima un backup SQLite.
+7. Attendi il completamento e apri `study_report.html`.
 
 ## Dal report all'Atlante
 

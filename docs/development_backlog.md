@@ -11,6 +11,19 @@ Backlog persistente ordinato per priorita. Ogni ciclo autonomo deve scegliere un
 
 ## Task
 
+### EA-INCREMENTAL-REBUILD-AND-ATTACHMENT-RESUME
+
+- Area: workspace-stage-management
+- Priorita: P0
+- Stato: done
+- Titolo: esporre rebuild sicuro nel BAT e rendere incrementale la ripresa allegati
+- Descrizione: permettere all'operatore di includere nuove email in un workspace esistente con backup esplicito e impedire che una ripresa dell'estrazione allegati riprocessi i file sorgente già completati.
+- File coinvolti: `CREA_STUDIO.bat`, `src/email_cluster/atlas/conversations.py`, `src/email_cluster/atlas/workspace_study.py`, `tests/test_windows_launchers.py`, `docs/*`
+- Criteri di accettazione: prompt rebuild nel BAT; messaggio errore con comando reale; solo allegati `metadata_only` e relative sorgenti vengono ripresi; workspace reale completato
+- Rischio: medio
+- Dipendenze: `EA-CONVERSATION-STABLE-KEY-COLLISION`
+- Note ultimo ciclo: 2026-07-12: `wsp_2` completato su 26.740 email, 17.430 conversazioni, 40 topic e 22.967 allegati; 12/12 stage verdi, nessun warning; backup SQLite creato prima del rebuild.
+
 ### EA-CONVERSATION-STABLE-KEY-COLLISION
 
 - Area: conversation-reconstruction

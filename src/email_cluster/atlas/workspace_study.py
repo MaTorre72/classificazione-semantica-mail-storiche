@@ -735,7 +735,23 @@ def _extract_attachment_texts(input_path: Path, db: Path, project: str, max_atta
         email_lookup = {
             row["message_hash"]: int(row["id"])
             for row in con.execute(
-                "SELECT id,message_hash FROM emails WHERE project_id=?",
+                """SELECT DISTINCT e.id,e.message_hash
+                   FROM emails e
+                   JOIN attachments a ON a.email_id=e.id
+                   WHERE e.project_id=?
+                     AND coalesce(a.extraction_status,'metadata_only')='metadata_only'""",
+                (pid,),
+            )
+        }
+        pending_source_paths = {
+            str(Path(row["path"]).resolve()).casefold()
+            for row in con.execute(
+                """SELECT DISTINCT sf.path
+                   FROM source_files sf
+                   JOIN emails e ON e.source_file_id=sf.id
+                   JOIN attachments a ON a.email_id=e.id
+                   WHERE e.project_id=?
+                     AND coalesce(a.extraction_status,'metadata_only')='metadata_only'""",
                 (pid,),
             )
         }
@@ -746,6 +762,7 @@ def _extract_attachment_texts(input_path: Path, db: Path, project: str, max_atta
                    FROM attachments a
                    JOIN emails e ON e.id=a.email_id
                    WHERE e.project_id=?
+                     AND coalesce(a.extraction_status,'metadata_only')='metadata_only'
                    ORDER BY a.email_id,a.id""",
                 (pid,),
             )
@@ -759,6 +776,8 @@ def _extract_attachment_texts(input_path: Path, db: Path, project: str, max_atta
 
     updated = 0
     for candidate in scan_local_folder(input_path):
+        if str(candidate.path.resolve()).casefold() not in pending_source_paths:
+            continue
         parsed_messages = (
             [parse_eml(candidate.path, extract_attachments=True, max_attachment_size_mb=max_attachment_mb)]
             if candidate.file_type == "eml"

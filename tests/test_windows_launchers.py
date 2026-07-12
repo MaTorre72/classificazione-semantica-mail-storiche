@@ -40,3 +40,10 @@ def test_current_launchers_use_installed_cli_and_support_non_opening_smoke() -> 
     }:
         content = (REPO_ROOT / name).read_text(encoding="utf-8")
         assert "EMAIL_ATLAS_NO_OPEN" in content
+
+
+def test_create_study_launcher_exposes_safe_conversation_rebuild() -> None:
+    content = (REPO_ROOT / "CREA_STUDIO.bat").read_text(encoding="utf-8")
+
+    assert "Ricostruire conversazioni con backup?" in content
+    assert "--rebuild-stage build_conversations" in content

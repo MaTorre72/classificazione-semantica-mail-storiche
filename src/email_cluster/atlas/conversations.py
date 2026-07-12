@@ -225,7 +225,8 @@ def build_conversations(
             raise ValueError(
                 f"Sono presenti {max(0, current_emails - existing_emails)} email non collegate. "
                 "Per proteggere revisioni e Atlante finale non ricostruisco automaticamente: "
-                "usa la modalita rebuild-derived, che crea prima un backup."
+                "rilancia lo studio con --rebuild-stage build_conversations, che crea prima "
+                "un backup. Da CREA_STUDIO.bat rispondi s alla domanda sulla ricostruzione."
             )
         result = {
             "project": project,
