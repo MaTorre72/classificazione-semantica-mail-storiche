@@ -11,6 +11,45 @@ Backlog persistente ordinato per priorita. Ogni ciclo autonomo deve scegliere un
 
 ## Task
 
+### EA-INCREMENTAL-REBUILD-AND-ATTACHMENT-RESUME
+
+- Area: workspace-stage-management
+- Priorita: P0
+- Stato: done
+- Titolo: esporre rebuild sicuro nel BAT e rendere incrementale la ripresa allegati
+- Descrizione: permettere all'operatore di includere nuove email in un workspace esistente con backup esplicito e impedire che una ripresa dell'estrazione allegati riprocessi i file sorgente già completati.
+- File coinvolti: `CREA_STUDIO.bat`, `src/email_cluster/atlas/conversations.py`, `src/email_cluster/atlas/workspace_study.py`, `tests/test_windows_launchers.py`, `docs/*`
+- Criteri di accettazione: prompt rebuild nel BAT; messaggio errore con comando reale; solo allegati `metadata_only` e relative sorgenti vengono ripresi; workspace reale completato
+- Rischio: medio
+- Dipendenze: `EA-CONVERSATION-STABLE-KEY-COLLISION`
+- Note ultimo ciclo: 2026-07-12: `wsp_2` completato su 26.740 email, 17.430 conversazioni, 40 topic e 22.967 allegati; 12/12 stage verdi, nessun warning; backup SQLite creato prima del rebuild.
+
+### EA-CONVERSATION-STABLE-KEY-COLLISION
+
+- Area: conversation-reconstruction
+- Priorita: P0
+- Stato: done
+- Titolo: impedire collisioni stable_key su archivi reali con Message-ID assente o riutilizzato
+- Descrizione: rendere univoca e ripetibile la chiave delle conversazioni usando il `message_hash` locale oltre ai metadati e ai Message-ID.
+- File coinvolti: `src/email_cluster/atlas/conversations.py`, `tests/test_atlas_conversations.py`, `docs/troubleshooting.md`
+- Criteri di accettazione: conversazioni con stessi metadati ma hash diversi non collidono; Message-ID riutilizzati non collidono; ricostruzione completa sul database copiato da `wsp_2`
+- Rischio: medio
+- Dipendenze: nessuna
+- Note ultimo ciclo: 2026-07-12: validato prima su copia del database e poi con rilancio completo di `wsp_2`: 1450 messaggi, 954 conversazioni, 22 topic e 12/12 stage completati senza collisioni o warning.
+
+### EA-CLEANUP-LAUNCHERS-AND-LEGACY
+
+- Area: repository-maintenance
+- Priorita: P1
+- Stato: done
+- Titolo: verificare launcher Windows e archiviare file superati nelle sottocartelle
+- Descrizione: provare realmente il percorso BAT su fixture locale, mantenere solo i launcher correnti alla radice e archiviare launcher e rapporti storici senza cancellare dati o moduli ancora referenziati.
+- File coinvolti: `*.bat`, `archive/`, `reports/archive/`, `tests/test_windows_launchers.py`, `.gitignore`
+- Criteri di accettazione: menu e launcher specializzati verificati; GUI Tkinter legacy archiviata; report progettuali storici archiviati; workspace locali ignorati; moduli ancora importati o testati preservati
+- Rischio: basso
+- Dipendenze: `EA-DOCS-OPERATOR-MANUAL`
+- Note ultimo ciclo: 2026-07-12: menu, study, doctor, Orange e build-atlas verificati su fixture locale; repair verificato nel percorso di annullamento sicuro; `email-cluster ui --help` conferma la console web; vecchio `start_gui.bat` e due report storici archiviati.
+
 ### EA-DOCS-OPERATOR-MANUAL
 
 - Area: documentation

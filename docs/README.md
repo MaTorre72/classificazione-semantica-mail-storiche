@@ -36,3 +36,6 @@ Per usare Email Atlas normalmente servono soltanto tre documenti:
 Le versioni precedenti, le proposte UX superate e le guide legacy sono conservate in
 [`archive/`](archive/README.md). Non sono istruzioni operative correnti. Per un nuovo studio usa
 `EMAIL_ATLAS.bat` oppure `email-atlas study`.
+
+I vecchi launcher e i rapporti progettuali non più correnti sono conservati rispettivamente in
+`archive/` e `reports/archive/` alla radice del repository.

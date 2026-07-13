@@ -29,7 +29,7 @@ if "%SCELTA%"=="1" call CREA_STUDIO.bat
 if "%SCELTA%"=="2" call COSTRUISCI_ATLANTE.bat
 if "%SCELTA%"=="3" call ESPORTA_ORANGE.bat
 if "%SCELTA%"=="4" call AVVIA_CONSOLE.bat
-if "%SCELTA%"=="5" start "" "docs\guida_uso_completa.md"
+if "%SCELTA%"=="5" if not defined EMAIL_ATLAS_NO_OPEN start "" "docs\guida_uso_completa.md"
 if "%SCELTA%"=="6" call CONTROLLO_WORKSPACE.bat
 if "%SCELTA%"=="7" call RIPARA_WORKSPACE.bat
 if "%SCELTA%"=="0" exit /b 0

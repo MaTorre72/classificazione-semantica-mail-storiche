@@ -15,7 +15,7 @@ if not exist "%APP%" (
 
 echo Avvio interfaccia grafica minima Email Atlas...
 echo La console sara disponibile su %URL%
-start "" "%URL%"
+if not defined EMAIL_ATLAS_NO_OPEN start "" "%URL%"
 "%APP%" ui --project archivio_storico --db "%DB%" --no-open-browser
 
 if errorlevel 1 (

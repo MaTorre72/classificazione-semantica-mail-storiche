@@ -1,5 +1,35 @@
 # Run Log
 
+## 2026-07-12 - aggiornamento workspace grande completato con rebuild e resume allegati
+
+- Task: `EA-INCREMENTAL-REBUILD-AND-ATTACHMENT-RESUME`
+- Esito: completed
+- Modifiche: `CREA_STUDIO.bat` propone la ricostruzione con backup quando il database esiste; l'errore indica il comando CLI reale; l'estrazione allegati seleziona solo righe `metadata_only` e salta le sorgenti già completamente elaborate.
+- Verifiche eseguite: test launcher e attachment resume; rebuild reale con backup; riprese mirate dell'estrazione; finalizzazione completa di `wsp_2`; quality checks completi.
+- Evidenze: 26.740 email, 17.430 conversazioni, 40 topic, 2.446 inviate, 24.294 ricevute, 22.967 allegati e 12/12 stage completati senza warning. Esiti allegati: 1.954 `extracted`, 13.587 `unsupported`, 7.417 `dependency_missing`, 9 `too_large`, 0 `metadata_only`.
+- Rischi/limiti: la finalizzazione completa ha richiesto circa 17 minuti senza output intermedio; il progresso visibile degli stage lunghi resta un miglioramento futuro separato.
+- Prossimo task suggerito: nessun task candidabile noto.
+
+## 2026-07-12 - collisione stable_key conversazioni corretta
+
+- Task: `EA-CONVERSATION-STABLE-KEY-COLLISION`
+- Esito: completed
+- Modifiche: `ConversationSeedRow` conserva il `message_hash`; la chiave stabile include gli hash sia nel percorso fallback sia quando un `Message-ID` viene riutilizzato; aggiunte due regressioni e troubleshooting.
+- Verifiche eseguite: test mirati `test_atlas_conversations.py` e `test_atlas_reset.py`; ricostruzione su copia del database; quality checks completi (`131 passed`); rilancio reale incrementale di `wsp_2` sulla copia storica confermata dall'utente.
+- Evidenze: 29 file invariati riutilizzati, 1450 email, 954 conversazioni, 22 topic, 164 messaggi inviati, 1286 ricevuti e 12/12 stage completati senza warning o `IntegrityError`.
+- Rischi/limiti: nessun blocco residuo noto; `wsp_2` resta un workspace locale ignorato da Git e contiene dati sensibili da non pubblicare.
+- Prossimo task suggerito: nessun task candidabile noto.
+
+## 2026-07-12 - launcher Windows verificati e residui storici archiviati
+
+- Task: `EA-CLEANUP-LAUNCHERS-AND-LEGACY`
+- Esito: completed
+- Modifiche: mantenuti sette `.bat` correnti alla radice; aggiunto `EMAIL_ATLAS_NO_OPEN` per smoke non interattivi; aggiunti controlli ambiente mancanti; archiviati il launcher Tkinter `start_gui.bat` e due report progettuali storici; aggiunto `wsp_*/` a `.gitignore` senza cancellare il workspace locale dell'utente.
+- Verifiche eseguite: menu exit; studio completo su 6 fixture EML; doctor integro; export Orange; build-atlas; annullamento prudente repair; `email-cluster ui --help`; test automatici dei launcher; scansione riferimenti e import dei moduli legacy.
+- Evidenze: study completato con 12/12 stage, 5 conversazioni e 2 topic; doctor con foreign key attive e nessuna violazione; Orange con otto file; Atlante con cinque formati.
+- Rischi/limiti: la console web non è stata lasciata in esecuzione durante il test; il suo comando e le opzioni sono stati verificati dall'help. I moduli storicamente denominati v2/v3/ui restano attivi perché sono importati e coperti da regressioni.
+- Prossimo task suggerito: nessun task candidabile noto.
+
 ## 2026-07-12 - documentazione operativa e launcher riordinati
 
 - Task: `EA-DOCS-OPERATOR-MANUAL`

@@ -32,6 +32,7 @@ RELATION_METHODS = (
 @dataclass(slots=True)
 class ConversationSeedRow:
     id: int
+    message_hash: str
     subject: str | None
     message_id: str
     has_attachments: int
@@ -79,6 +80,7 @@ def _conversation_seed_row(row: Any, accounts: set[str]) -> ConversationSeedRow:
     sender_lower = sender.lower()
     return ConversationSeedRow(
         id=row["id"],
+        message_hash=row["message_hash"],
         subject=clean_subject(row["subject"] or ""),
         message_id=normalize_message_id(row["original_message_id"]),
         has_attachments=row["has_attachments"],
@@ -126,13 +128,19 @@ def stable_conversation_key(members: list[dict[str, Any]]) -> str:
     message_ids = sorted(
         value for row in members if (value := normalize_message_id(row["original_message_id"]))
     )
+    message_hashes = sorted(str(row.get("message_hash") or "") for row in members)
     if message_ids:
-        material = "message-ids|" + "|".join(message_ids)
+        material = (
+            "message-ids|" + "|".join(message_ids) + "|message-hashes|" + "|".join(message_hashes)
+        )
     else:
         subject = clean_subject(members[-1]["subject"] or "").lower()
         participants = sorted({item for row in members for item in row["_participants"]})
         first_date = (members[0]["sent_at"] or members[0]["imported_at"] or "")[:10]
-        material = f"fallback|{subject}|{first_date}|{'|'.join(participants)}"
+        material = (
+            f"fallback|{subject}|{first_date}|{'|'.join(participants)}|"
+            f"message-hashes|{'|'.join(message_hashes)}"
+        )
     return hashlib.sha256(material.encode("utf-8", errors="replace")).hexdigest()
 
 
@@ -142,15 +150,23 @@ def stable_conversation_key_from_parts(
     fallback_subject: str,
     fallback_first_date: str,
     fallback_participants: list[str],
+    fallback_message_hashes: list[str],
 ) -> str:
     """Build a stable key from already aggregated conversation fields."""
     normalized_ids = sorted(normalize_message_id(value) for value in message_ids if value)
+    normalized_hashes = sorted(fallback_message_hashes)
     if normalized_ids:
-        material = "message-ids|" + "|".join(normalized_ids)
+        material = (
+            "message-ids|"
+            + "|".join(normalized_ids)
+            + "|message-hashes|"
+            + "|".join(normalized_hashes)
+        )
     else:
         material = (
             f"fallback|{clean_subject(fallback_subject).lower()}|{fallback_first_date}|"
-            f"{'|'.join(sorted(fallback_participants))}"
+            f"{'|'.join(sorted(fallback_participants))}|message-hashes|"
+            f"{'|'.join(normalized_hashes)}"
         )
     return hashlib.sha256(material.encode("utf-8", errors="replace")).hexdigest()
 
@@ -209,7 +225,8 @@ def build_conversations(
             raise ValueError(
                 f"Sono presenti {max(0, current_emails - existing_emails)} email non collegate. "
                 "Per proteggere revisioni e Atlante finale non ricostruisco automaticamente: "
-                "usa la modalita rebuild-derived, che crea prima un backup."
+                "rilancia lo studio con --rebuild-stage build_conversations, che crea prima "
+                "un backup. Da CREA_STUDIO.bat rispondi s alla domanda sulla ricostruzione."
             )
         result = {
             "project": project,
@@ -233,7 +250,7 @@ def build_conversations(
         rows = [
             _conversation_seed_row(row, account_tokens)
             for row in con.execute(
-                """SELECT e.id,e.sender,e.recipients,e.subject,e.original_message_id,
+                """SELECT e.id,e.message_hash,e.sender,e.recipients,e.subject,e.original_message_id,
                           e.raw_headers_json,e.has_attachments,e.sent_at,e.imported_at
                    FROM emails e
                    WHERE e.project_id=?
@@ -333,6 +350,7 @@ def build_conversations(
             # Keep the per-conversation insert payload compact until the batch write.
             conversation_email_ids = array("I")
             conversation_relation_codes = array("B")
+            conversation_message_hashes: list[str] = []
             # Avoid allocating list objects for one-message / one-text conversations.
             first_message_id: str | None = None
             message_ids: list[str] | None = None
@@ -341,6 +359,7 @@ def build_conversations(
                 row_index = current_row_index + position
                 conversation_email_ids.append(row.id)
                 conversation_relation_codes.append(row.relation_code)
+                conversation_message_hashes.append(row.message_hash)
                 message_count += 1
                 explicit += int(row.relation_code == RELATION_HEADERS)
                 fallback += int(row.relation_code == RELATION_SUBJECT_PARTICIPANTS_DATE)
@@ -363,6 +382,7 @@ def build_conversations(
                 incoming += int(row.is_incoming)
                 outgoing += int(not row.is_incoming)
                 row.participants = ()
+                row.message_hash = ""
                 row.is_incoming = True
                 row.has_attachments = 0
                 row.relation_code = RELATION_ISOLATED
@@ -441,6 +461,7 @@ def build_conversations(
                         fallback_subject=last_subject,
                         fallback_first_date=(first_sent_at or first_imported_at or "")[:10],
                         fallback_participants=participants,
+                        fallback_message_hashes=conversation_message_hashes,
                     ),
                     subject,
                     first_sent_at,
@@ -460,6 +481,7 @@ def build_conversations(
                 ),
             )
             del stable_message_ids
+            del conversation_message_hashes
             conversation_id = int(cursor.lastrowid)
             con.executemany(
                 """INSERT INTO atlas_conversation_messages(
